@@ -1,12 +1,15 @@
 'use client'
 
-// Phases 1 to 3: live traffic near SFO, callsign resolution, and the clearance
-// parsed into a constraint. No verdict yet -- the conformance engine is phase 4.
+// Phases 1 to 5. Live traffic near SFO, callsign resolution, clearance parsing,
+// the conformance engine, and the board that shows what it concluded.
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import type { Aircraft, TrafficResponse } from '@/lib/types'
 import { resolveCallsign, suggestSameAirline } from '@/lib/callsign'
 import { parseInstruction, describeConstraint } from '@/lib/parser'
+import { TOL } from '@/lib/conform'
+import { boardReducer, initialBoardState, makeClearance } from '@/lib/board'
+import { ClearanceBoard } from './components/ClearanceBoard'
 
 const POLL_MS = 2000
 /** Beyond this many seconds since the last position, a track is not trustworthy. */
@@ -36,9 +39,10 @@ export default function Page() {
   const [error, setError] = useState<string | null>(null)
   const [now, setNow] = useState(() => Date.now())
   const [query, setQuery] = useState('')
-  const [submitted, setSubmitted] = useState<string | null>(null)
+  const [issueError, setIssueError] = useState<string | null>(null)
   const [filter, setFilter] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  const [board, dispatch] = useReducer(boardReducer, initialBoardState)
 
   // Poll the proxy. A failed poll keeps the previous picture on screen and
   // raises the stale badge instead of blanking the board.
@@ -65,25 +69,75 @@ export default function Page() {
     return () => clearInterval(id)
   }, [poll])
 
-  // Separate ticker so the "age" readout counts up between polls.
+  // Ticker, so the response countdown and the feed age move between polls.
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 500)
     return () => clearInterval(id)
   }, [])
 
-  // Re-resolve on every snapshot, so the resolved aircraft's numbers stay live
-  // rather than freezing at the moment the operator pressed enter.
+  // Every snapshot extends the track of each open clearance and re-judges it.
+  useEffect(() => {
+    if (traffic.length === 0) return
+    dispatch({ type: 'SNAPSHOT', byHex: new Map(traffic.map((a) => [a.hex, a])), now: Date.now() })
+  }, [traffic])
+
+  // Live preview of what would be issued, so a bad callsign or an unparseable
+  // instruction shows before enter is pressed rather than after.
+  const typed = query.trim()
   const resolution = useMemo(
-    () => (submitted ? resolveCallsign(submitted, traffic) : null),
-    [submitted, traffic],
+    () => (typed ? resolveCallsign(typed, traffic) : null),
+    [typed, traffic],
   )
+  const parsed = useMemo(() => (typed ? parseInstruction(typed) : null), [typed])
   const suggestions = useMemo(
-    () => (submitted && resolution?.outcome === 'none' ? suggestSameAirline(submitted, traffic) : []),
-    [submitted, resolution, traffic],
+    () => (typed && resolution?.outcome === 'none' ? suggestSameAirline(typed, traffic) : []),
+    [typed, resolution, traffic],
   )
-  // Phase 3. The parse depends only on the text, never on the traffic picture,
-  // so it does not need to be redone on every snapshot.
-  const parsed = useMemo(() => (submitted ? parseInstruction(submitted) : null), [submitted])
+
+  const issue = useCallback(
+    (text: string, aircraft: Aircraft) => {
+      const p = parseInstruction(text)
+      if (!p.ok) {
+        setIssueError(p.reason)
+        return
+      }
+      const issuedAt = Date.now()
+      dispatch({
+        type: 'ISSUE',
+        clearance: makeClearance({
+          id: `${aircraft.hex}-${issuedAt}`,
+          issuedAt,
+          aircraft,
+          constraint: p.constraint,
+          spokenText: text,
+          spokenCallsign: resolveCallsign(text, traffic).spokenCallsign,
+        }),
+      })
+      setQuery('')
+      setIssueError(null)
+      inputRef.current?.focus()
+    },
+    [traffic],
+  )
+
+  const submit = useCallback(() => {
+    if (!typed) return
+    const r = resolveCallsign(typed, traffic)
+    const p = parseInstruction(typed)
+    if (!p.ok) {
+      setIssueError(p.reason)
+      return
+    }
+    if (r.outcome === 'exact') {
+      issue(typed, r.aircraft)
+      return
+    }
+    setIssueError(
+      r.outcome === 'ambiguous'
+        ? 'more than one aircraft matches, pick one below'
+        : `could not resolve an aircraft: ${r.reason}`,
+    )
+  }, [typed, traffic, issue])
 
   const rows = useMemo(() => {
     const f = filter.trim().toUpperCase()
@@ -99,11 +153,12 @@ export default function Page() {
       .sort((a, b) => (a.callsign ?? 'zzzz').localeCompare(b.callsign ?? 'zzzz'))
   }, [traffic, filter])
 
+  const watched = useMemo(() => new Set(board.clearances.map((c) => c.hex)), [board.clearances])
   const ageSec = fetchedAt === null ? null : Math.max(0, Math.round((now - fetchedAt) / 1000))
   const feedStale = ageSec !== null && ageSec > 10
 
   return (
-    <main className="mx-auto max-w-[1400px] px-6 py-6">
+    <main className="mx-auto max-w-[1500px] px-6 py-6">
       <header className="border-b border-slate-800 pb-4">
         <div className="flex flex-wrap items-baseline justify-between gap-3">
           <h1 className="text-xl font-semibold tracking-tight text-slate-100">
@@ -119,7 +174,11 @@ export default function Page() {
                   : 'rounded bg-emerald-950 px-2 py-1 text-emerald-400'
               }
             >
-              {error ? 'FEED ERROR · HOLDING LAST' : feedStale ? `STALE ${ageSec}s` : `LIVE ${ageSec ?? '--'}s`}
+              {error
+                ? 'FEED ERROR · HOLDING LAST'
+                : feedStale
+                  ? `STALE ${ageSec}s`
+                  : `LIVE ${ageSec ?? '--'}s`}
             </span>
             <span className="text-slate-500">{traffic.length} contacts</span>
           </div>
@@ -128,6 +187,8 @@ export default function Page() {
         <p className="mt-3 text-sm text-amber-300/90">
           Clearances typed here are synthetic. No aircraft ever receives them. The aircraft, the
           ADS-B tracks and the conformance logic are real; the instruction is not transmitted.
+          Compliance means the aircraft happened to already be doing that. The output is a
+          candidate for review, not a finding.
         </p>
         {error && (
           <p className="mt-2 font-mono text-xs text-amber-500/80">
@@ -136,19 +197,22 @@ export default function Page() {
         )}
       </header>
 
-      {/* ---- Phase 2: callsign resolution ---- */}
+      {/* ---- issue a clearance ---- */}
       <section className="mt-6">
         <form
           onSubmit={(e) => {
             e.preventDefault()
-            setSubmitted(query.trim() || null)
+            submit()
           }}
           className="flex flex-wrap gap-2"
         >
           <input
             ref={inputRef}
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value)
+              setIssueError(null)
+            }}
             placeholder="united 328 climb and maintain one zero thousand"
             className="min-w-[320px] flex-1 rounded border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-sm text-slate-100 outline-none placeholder:text-slate-600 focus:border-sky-600"
           />
@@ -156,135 +220,92 @@ export default function Page() {
             type="submit"
             className="rounded bg-sky-700 px-4 py-2 text-sm font-medium text-white hover:bg-sky-600"
           >
-            Resolve
+            Issue
           </button>
-          {submitted && (
-            <button
-              type="button"
-              onClick={() => {
-                setSubmitted(null)
-                setQuery('')
-                inputRef.current?.focus()
-              }}
-              className="rounded border border-slate-700 px-4 py-2 text-sm text-slate-400 hover:bg-slate-900"
-            >
-              Clear
-            </button>
-          )}
         </form>
 
-        {resolution && (
-          <div className="mt-3 rounded border border-slate-800 bg-slate-900/50 p-4">
-            <div className="flex flex-wrap items-center gap-3">
-              <span
-                className={
-                  'rounded px-2 py-1 font-mono text-xs font-semibold ' +
-                  (resolution.outcome === 'exact'
-                    ? 'bg-emerald-950 text-emerald-400'
-                    : resolution.outcome === 'ambiguous'
-                      ? 'bg-amber-950 text-amber-400'
-                      : 'bg-slate-800 text-slate-400')
-                }
-              >
-                {resolution.outcome.toUpperCase()}
+        {/* What would be issued, updated as it is typed. */}
+        {typed && (
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 rounded border border-slate-800 bg-slate-900/50 px-4 py-3 font-mono text-xs">
+            <span
+              className={
+                'rounded px-2 py-1 font-semibold ' +
+                (resolution?.outcome === 'exact'
+                  ? 'bg-emerald-950 text-emerald-400'
+                  : resolution?.outcome === 'ambiguous'
+                    ? 'bg-amber-950 text-amber-400'
+                    : 'bg-slate-800 text-slate-400')
+              }
+            >
+              {resolution?.outcome.toUpperCase() ?? 'NONE'}
+            </span>
+            {resolution?.outcome === 'exact' ? (
+              <span className="text-slate-300">
+                {resolution.resolvedCallsign} · {resolution.aircraft.hex} ·{' '}
+                {resolution.aircraft.registration ?? '--'} · {resolution.aircraft.type ?? '--'} ·{' '}
+                {fmtAlt(resolution.aircraft)} ft
               </span>
-              <span className="font-mono text-sm text-slate-400">
-                &ldquo;{resolution.spokenCallsign}&rdquo;
-                {resolution.resolvedCallsign && (
-                  <>
-                    <span className="mx-2 text-slate-600">→</span>
-                    <span className="text-slate-100">{resolution.resolvedCallsign}</span>
-                  </>
-                )}
+            ) : (
+              <span className="text-slate-500">
+                {resolution?.outcome === 'ambiguous'
+                  ? `${resolution.candidates.length} candidates`
+                  : (resolution?.reason ?? '')}
               </span>
-            </div>
-
-            {resolution.outcome === 'exact' && (
-              <dl className="mt-4 grid grid-cols-2 gap-x-8 gap-y-3 font-mono text-sm sm:grid-cols-4 lg:grid-cols-7">
-                <Field label="hex" value={resolution.aircraft.hex} accent />
-                <Field label="tail" value={resolution.aircraft.registration ?? '--'} accent />
-                <Field label="type" value={resolution.aircraft.type ?? '--'} />
-                <Field label="altitude" value={`${fmtAlt(resolution.aircraft)} ft`} />
-                <Field label="vertical" value={`${fmtVs(resolution.aircraft.vsFpm)} fpm`} />
-                <Field label="gnd speed" value={`${Math.round(resolution.aircraft.gsKt ?? 0)} kt`} />
-                <Field
-                  label="track (true)"
-                  value={
-                    resolution.aircraft.trackTrue === null
-                      ? '--'
-                      : `${Math.round(resolution.aircraft.trackTrue).toString().padStart(3, '0')}°`
-                  }
-                />
-              </dl>
             )}
-
-            {resolution.outcome === 'ambiguous' && (
-              <div className="mt-3">
-                <p className="text-sm text-amber-300/90">
-                  {resolution.candidates.length} live aircraft match. Not guessing — pick one.
-                </p>
-                <ul className="mt-2 space-y-1 font-mono text-sm">
-                  {resolution.candidates.map((c) => (
-                    <li key={c.hex} className="text-slate-300">
-                      {c.callsign} · {c.hex} · {c.registration ?? '--'} · {c.type ?? '--'} ·{' '}
-                      {fmtAlt(c)} ft
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-
-            {resolution.outcome === 'none' && (
-              <>
-                <p className="mt-3 text-sm text-slate-400">{resolution.reason}</p>
-                {suggestions.length > 0 && (
-                  <p className="mt-2 font-mono text-sm text-slate-500">
-                    same operator airborne now: {suggestions.map((a) => a.callsign).join(' · ')}
-                  </p>
-                )}
-              </>
-            )}
-
-            {/* Phase 3: the instruction, parsed by grammar into a constraint. */}
-            {parsed && (
-              <div className="mt-4 border-t border-slate-800 pt-4">
-                <div className="flex flex-wrap items-center gap-3">
-                  <span
-                    className={
-                      'rounded px-2 py-1 font-mono text-xs font-semibold ' +
-                      (parsed.ok ? 'bg-emerald-950 text-emerald-400' : 'bg-slate-800 text-slate-400')
-                    }
-                  >
-                    {parsed.ok ? 'PARSED' : 'NOT PARSED'}
-                  </span>
-                  {parsed.ok ? (
-                    <>
-                      <span className="text-sm text-slate-100">
-                        {describeConstraint(parsed.constraint)}
-                      </span>
-                      <span className="font-mono text-xs text-slate-500">
-                        form: {parsed.form}
-                      </span>
-                    </>
-                  ) : (
-                    <span className="text-sm text-slate-400">{parsed.reason}</span>
-                  )}
-                </div>
-                {parsed.ok && (
-                  <pre className="mt-3 overflow-x-auto rounded bg-slate-950 p-3 font-mono text-xs text-sky-300">
-{JSON.stringify(parsed.constraint, null, 2)}
-                  </pre>
-                )}
-                <p className="mt-2 text-xs text-slate-600">
-                  Parsed only. No conformance verdict yet — the engine is phase 4.
-                </p>
-              </div>
-            )}
+            <span className="text-slate-700">|</span>
+            <span
+              className={
+                'rounded px-2 py-1 font-semibold ' +
+                (parsed?.ok ? 'bg-emerald-950 text-emerald-400' : 'bg-slate-800 text-slate-400')
+              }
+            >
+              {parsed?.ok ? 'PARSED' : 'NOT PARSED'}
+            </span>
+            <span className="text-slate-300">
+              {parsed?.ok ? describeConstraint(parsed.constraint) : (parsed?.reason ?? '')}
+            </span>
           </div>
+        )}
+
+        {issueError && <p className="mt-2 text-sm text-amber-400">{issueError}</p>}
+
+        {/* Ambiguity is resolved by the operator, never by the app. */}
+        {resolution?.outcome === 'ambiguous' && (
+          <div className="mt-2 space-y-1">
+            {resolution.candidates.map((c) => (
+              <button
+                key={c.hex}
+                onClick={() => issue(typed, c)}
+                className="block w-full rounded border border-amber-900/60 bg-amber-950/20 px-3 py-2 text-left font-mono text-sm text-amber-200 hover:bg-amber-950/50"
+              >
+                {c.callsign} · {c.hex} · {c.registration ?? '--'} · {c.type ?? '--'} · {fmtAlt(c)} ft
+              </button>
+            ))}
+          </div>
+        )}
+
+        {suggestions.length > 0 && (
+          <p className="mt-2 font-mono text-xs text-slate-500">
+            same operator airborne now: {suggestions.map((a) => a.callsign).join(' · ')}
+          </p>
         )}
       </section>
 
-      {/* ---- Phase 1: live traffic ---- */}
+      {/* ---- the board ---- */}
+      <section className="mt-8">
+        <div className="mb-2 flex items-baseline justify-between">
+          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
+            Clearances this session
+          </h2>
+          <span className="font-mono text-xs text-slate-600">
+            {board.clearances.length} issued · response window {TOL.responseWindowSec}s · level band{' '}
+            {TOL.altLevelBandFt} ft · heading tolerance {TOL.hdgToleranceDeg}°
+          </span>
+        </div>
+        <ClearanceBoard clearances={board.clearances} now={now} />
+      </section>
+
+      {/* ---- live traffic ---- */}
       <section className="mt-8">
         <div className="mb-2 flex items-baseline justify-between">
           <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
@@ -297,9 +318,9 @@ export default function Page() {
             className="w-40 rounded border border-slate-800 bg-slate-900 px-2 py-1 font-mono text-xs text-slate-300 outline-none placeholder:text-slate-600 focus:border-slate-600"
           />
         </div>
-        <div className="overflow-x-auto rounded border border-slate-800">
+        <div className="max-h-[420px] overflow-auto rounded border border-slate-800">
           <table className="w-full border-collapse font-mono text-sm">
-            <thead>
+            <thead className="sticky top-0">
               <tr className="bg-slate-900 text-left text-xs uppercase tracking-wider text-slate-500">
                 <Th>callsign</Th>
                 <Th>hex</Th>
@@ -316,14 +337,16 @@ export default function Page() {
             <tbody>
               {rows.map((a) => {
                 const stale = a.seenPosSec > STALE_SEC
-                const highlight =
-                  resolution?.outcome === 'exact' && resolution.aircraft.hex === a.hex
                 return (
                   <tr
                     key={a.hex}
                     className={
                       'border-t border-slate-900 ' +
-                      (highlight ? 'bg-sky-950/60' : stale ? 'text-slate-600' : 'hover:bg-slate-900/50')
+                      (watched.has(a.hex)
+                        ? 'bg-sky-950/50'
+                        : stale
+                          ? 'text-slate-600'
+                          : 'hover:bg-slate-900/50')
                     }
                   >
                     <Td className="font-semibold text-slate-100">{a.callsign ?? '--'}</Td>
@@ -354,7 +377,9 @@ export default function Page() {
               {rows.length === 0 && (
                 <tr>
                   <td colSpan={10} className="p-6 text-center text-slate-600">
-                    {traffic.length === 0 ? 'waiting for first snapshot…' : 'no contacts match filter'}
+                    {traffic.length === 0
+                      ? 'waiting for first snapshot…'
+                      : 'no contacts match filter'}
                   </td>
                 </tr>
               )}
@@ -362,21 +387,14 @@ export default function Page() {
           </table>
         </div>
         <p className="mt-3 text-xs text-slate-600">
-          Track is degrees true and is not heading — wind pushes the aircraft sideways. Magnetic
-          correction and heading conformance arrive with the engine in phase 4. Rows dimmed and
-          flagged amber have not reported a position for more than {STALE_SEC}s.
+          Track is degrees true; headings are judged in degrees magnetic, corrected by{' '}
+          {TOL.magVarDeg}° for variation at SFO. Ground track is not heading, because wind pushes
+          the aircraft sideways, so <span className="font-mono">nav hdg</span> is preferred when the
+          autopilot broadcasts it. Rows flagged amber have not reported a position for more than{' '}
+          {STALE_SEC}s and are judged UNKNOWN, never DEVIATED.
         </p>
       </section>
     </main>
-  )
-}
-
-function Field({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
-  return (
-    <div>
-      <dt className="text-xs uppercase tracking-wider text-slate-500">{label}</dt>
-      <dd className={accent ? 'mt-1 text-sky-300' : 'mt-1 text-slate-100'}>{value}</dd>
-    </div>
   )
 }
 

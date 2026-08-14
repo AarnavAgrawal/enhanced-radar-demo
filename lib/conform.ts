@@ -30,11 +30,29 @@ export const TOL = {
   // Beyond section 4.6, and tunable for the same reason the rest are.
   hdgRespondingDeg: 5, // turn that counts as having started the turn
   spdRespondingKt: 5, // speed change that counts as a real response
+  driftMultiplier: 2, // how far off an established value counts as having left it
 } as const
 
-/** A clearance still worth watching. A closed one is never re-judged. */
+/**
+ * Whether a clearance is still being monitored.
+ *
+ * COMPLIED counts as open. An altitude assignment does not stop applying the
+ * moment the aircraft reaches it -- "climb and maintain one zero thousand" says
+ * maintain, and an aircraft that levels at 10,000 and then drifts off it is the
+ * single event most worth catching. Closing the clearance on arrival would make
+ * a level bust invisible.
+ *
+ * DEVIATED is terminal. It records something that happened at a time, and the
+ * evidence attached to it is the evidence as it stood then. Letting it reopen
+ * would rewrite the finding every two seconds.
+ */
 export function isOpen(verdict: Verdict): boolean {
-  return verdict === 'PENDING' || verdict === 'COMPLYING' || verdict === 'UNKNOWN'
+  return (
+    verdict === 'PENDING' ||
+    verdict === 'COMPLYING' ||
+    verdict === 'UNKNOWN' ||
+    verdict === 'COMPLIED'
+  )
 }
 
 /** Headings run 001 through 360. North is 360, never 0. */
@@ -142,14 +160,19 @@ export function evaluate(clearance: Clearance, buffer: TrackSample[], now: numbe
   }
 
   const elapsedSec = (now - clearance.issuedAt) / 1000
+  // Once the aircraft has reached the assigned value, the question stops being
+  // "is it responding" and becomes "is it still there". The response window no
+  // longer applies, and leaving the value is a deviation rather than a slow
+  // reaction.
+  const established = clearance.status === 'COMPLIED'
 
   switch (clearance.constraint.kind) {
     case 'ALTITUDE':
-      return evaluateAltitude(clearance.constraint, latest, elapsedSec)
+      return evaluateAltitude(clearance.constraint, latest, elapsedSec, established)
     case 'HEADING':
-      return evaluateHeading(clearance.constraint, buffer, latest, elapsedSec)
+      return evaluateHeading(clearance.constraint, buffer, latest, elapsedSec, established)
     case 'SPEED':
-      return evaluateSpeed(clearance.constraint, buffer, latest, elapsedSec)
+      return evaluateSpeed(clearance.constraint, buffer, latest, elapsedSec, established)
   }
 }
 
@@ -169,6 +192,7 @@ function evaluateAltitude(
   c: Extract<Clearance['constraint'], { kind: 'ALTITUDE' }>,
   latest: TrackSample,
   elapsedSec: number,
+  established: boolean,
 ): Assessment {
   const alt = latest.altFt
   if (alt === null) {
@@ -183,7 +207,9 @@ function evaluateAltitude(
   // "maintain" is a different question from "climb" or "descend". There is no
   // response window, because the aircraft is not being asked to start doing
   // anything, only to keep doing it.
-  if (c.direction === 'hold') {
+  // An established climb or descent becomes a hold: it was told to climb AND
+  // MAINTAIN, and it is now on the maintain half of that.
+  if (c.direction === 'hold' || established) {
     if (Math.abs(errorFt) > TOL.altBustFt) {
       return {
         verdict: 'DEVIATED',
@@ -273,6 +299,7 @@ function evaluateHeading(
   buffer: TrackSample[],
   latest: TrackSample,
   elapsedSec: number,
+  established: boolean,
 ): Assessment {
   const current = headingOf(latest)
   if (!current) {
@@ -285,10 +312,34 @@ function evaluateHeading(
       : `from ground track corrected ${TOL.magVarDeg}° for magnetic variation, which is not heading in a crosswind`
 
   const errorDeg = angularDifference(current.deg, assigned)
+  const offDeg = Math.abs(errorDeg)
+
+  // Already established on this heading, so the only question left is whether
+  // it has wandered off. The band for leaving is wider than the band for
+  // arriving, so a heading held on the edge of tolerance does not flicker
+  // between two verdicts every couple of seconds.
+  if (established) {
+    if (offDeg <= TOL.hdgToleranceDeg) {
+      return {
+        verdict: 'COMPLIED',
+        detail: `holding heading ${hdg(current.deg)}°, assigned ${hdg(assigned)}°, ${caveat}`,
+      }
+    }
+    if (offDeg > TOL.hdgToleranceDeg * TOL.driftMultiplier) {
+      return {
+        verdict: 'DEVIATED',
+        detail: `established on ${hdg(assigned)}° and has since drifted to ${hdg(current.deg)}°, ${Math.round(offDeg)}° off, ${caveat}`,
+      }
+    }
+    return {
+      verdict: 'COMPLYING',
+      detail: `drifting off the assigned ${hdg(assigned)}°, now ${hdg(current.deg)}°, ${Math.round(offDeg)}° off, ${caveat}`,
+    }
+  }
 
   // Established on the assigned heading. Checked first: how the aircraft got
   // there stops mattering once it is there.
-  if (Math.abs(errorDeg) <= TOL.hdgToleranceDeg) {
+  if (offDeg <= TOL.hdgToleranceDeg) {
     return {
       verdict: 'COMPLIED',
       detail: `established heading ${hdg(current.deg)}°, assigned ${hdg(assigned)}°, ${Math.abs(Math.round(errorDeg))}° off, ${caveat}`,
@@ -363,6 +414,7 @@ function evaluateSpeed(
   buffer: TrackSample[],
   latest: TrackSample,
   elapsedSec: number,
+  established: boolean,
 ): Assessment {
   const gs = latest.gsKt
   if (gs === null) {
@@ -374,8 +426,30 @@ function evaluateSpeed(
   // 80 kt or more. This caveat belongs on every speed verdict.
   const caveat = 'judged on ground speed, so wind makes this approximate'
   const errorKt = assigned - gs
+  const offKt = Math.abs(errorKt)
 
-  if (Math.abs(errorKt) <= TOL.spdToleranceKt) {
+  // Already at the assigned speed, so the question is whether it has drifted
+  // off. As with heading, leaving takes a wider band than arriving did.
+  if (established) {
+    if (offKt <= TOL.spdToleranceKt) {
+      return {
+        verdict: 'COMPLIED',
+        detail: `holding ${Math.round(gs)} kt against an assigned ${assigned} kt, ${caveat}`,
+      }
+    }
+    if (offKt > TOL.spdToleranceKt * TOL.driftMultiplier) {
+      return {
+        verdict: 'DEVIATED',
+        detail: `was established at ${assigned} kt and is now ${Math.round(gs)} kt, ${Math.round(offKt)} kt off, ${caveat}`,
+      }
+    }
+    return {
+      verdict: 'COMPLYING',
+      detail: `drifting off the assigned ${assigned} kt, now ${Math.round(gs)} kt, ${caveat}`,
+    }
+  }
+
+  if (offKt <= TOL.spdToleranceKt) {
     return {
       verdict: 'COMPLIED',
       detail: `${Math.round(gs)} kt against an assigned ${assigned} kt, inside ${TOL.spdToleranceKt} kt, ${caveat}`,

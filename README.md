@@ -19,7 +19,7 @@ track, and reports whether it is doing what it was told.
 | 2 | Callsign resolution | **done** |
 | 3 | Clearance parser | **done** |
 | 4 | Conformance engine | **done** |
-| 5 | The board | not started |
+| 5 | The board | **done** |
 | 6 | Expo hardening (replay mode) | not started |
 | 7 | Voice (Deepgram) | not started |
 
@@ -150,16 +150,36 @@ autopilot broadcasts it; otherwise ground track is corrected by 13 degrees for
 variation and the detail line says so, because track is not heading in a
 crosswind.
 
+**The board.** One row per clearance issued this session, closed ones included,
+because a monitor whose history scrolls away is not much use to the person
+reviewing it. Each row carries the spoken callsign, the resolved callsign, the
+tail, the current altitude and vertical rate, the clearance in plain English, a
+trend line with the assigned value drawn across it as a dashed reference, the
+verdict badge, and the evidence line underneath. PENDING rows show the response
+window counting down.
+
+An `ambiguous` resolution is offered as buttons; clicking one issues the
+clearance against that aircraft. The app never picks for you.
+
+Reaching the assigned value does not close a clearance. "Climb and maintain one
+zero thousand" says *maintain*, so an aircraft that levels at 10,000 and later
+drifts off it turns from COMPLIED to DEVIATED. Leaving a value takes a wider
+band than arriving at it did, so a heading held on the edge of tolerance does
+not flicker between verdicts. DEVIATED is terminal: it records something that
+happened at a time.
+
 ## Layout
 
 ```
 app/api/traffic/route.ts   proxy to adsb.lol, last-known-good cache
 app/page.tsx               the board
+app/components/            ClearanceBoard, Sparkline
 lib/adsb.ts                fetch + normalise raw ADS-B into Aircraft
 lib/telephony.ts           spoken airline name -> ICAO prefix
 lib/callsign.ts            free text -> ICAO callsign -> live aircraft
 lib/parser.ts              clearance grammar + aviation number normalisation
 lib/conform.ts             the verdict engine, pure functions only
+lib/board.ts               session state, pure reducer
 lib/types.ts               shared data model
 tests/parser.test.ts       58 tests, every row of 4.4 and every form of 4.5
 tests/conform.test.ts      49 tests against synthetic track buffers

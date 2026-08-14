@@ -386,10 +386,18 @@ describe('superseded', () => {
   })
 
   test('a closed clearance is left alone', () => {
-    const done = clearance(CLIMB_10K, { id: 'done', status: 'COMPLIED', detail: 'level 10,000 ft' })
+    const done = clearance(CLIMB_10K, { id: 'done', status: 'DEVIATED', detail: 'busted through' })
     const out = supersede([done], clearance(DESCEND_5K, { id: 'new' }))
-    assert.equal(out.find((c) => c.id === 'done')?.status, 'COMPLIED')
-    assert.equal(out.find((c) => c.id === 'done')?.detail, 'level 10,000 ft')
+    assert.equal(out.find((c) => c.id === 'done')?.status, 'DEVIATED')
+    assert.equal(out.find((c) => c.id === 'done')?.detail, 'busted through')
+  })
+
+  test('an established clearance IS superseded by a new assignment', () => {
+    // An aircraft level at 10,000 that is then told to descend is no longer
+    // being held to 10,000, so the old clearance has to stop applying.
+    const done = clearance(CLIMB_10K, { id: 'done', status: 'COMPLIED' })
+    const out = supersede([done], clearance(DESCEND_5K, { id: 'new' }))
+    assert.equal(out.find((c) => c.id === 'done')?.status, 'SUPERSEDED')
   })
 
   test('an UNKNOWN clearance is still open and can be superseded', () => {
@@ -409,9 +417,62 @@ describe('superseded', () => {
     assert.equal(isOpen('PENDING'), true)
     assert.equal(isOpen('COMPLYING'), true)
     assert.equal(isOpen('UNKNOWN'), true)
-    assert.equal(isOpen('COMPLIED'), false)
+    // Still monitored: "climb and maintain" says maintain, so reaching the
+    // altitude is not the end of the clearance.
+    assert.equal(isOpen('COMPLIED'), true)
+    // Terminal: a deviation is an event that happened at a time.
     assert.equal(isOpen('DEVIATED'), false)
     assert.equal(isOpen('SUPERSEDED'), false)
+  })
+})
+
+describe('an established clearance keeps being monitored', () => {
+  test('still level at the assigned altitude -> COMPLIED', () => {
+    const c = clearance(CLIMB_10K, { status: 'COMPLIED' })
+    const buf = samples([{ at: 0, alt: 10000, vs: 0 }, { at: 300, alt: 10050, vs: 0 }])
+    assertVerdict(verdictAt(c, buf, 300), 'COMPLIED')
+  })
+
+  test('level bust long after the clearance -> DEVIATED', () => {
+    // The single event most worth catching. If reaching the altitude closed the
+    // clearance, this would be invisible.
+    const c = clearance(CLIMB_10K, { status: 'COMPLIED' })
+    const buf = samples([{ at: 0, alt: 10000, vs: 0 }, { at: 300, alt: 10600, vs: 900 }])
+    const a = verdictAt(c, buf, 300)
+    assertVerdict(a, 'DEVIATED')
+    assert.match(a.detail, /left it|10,600/)
+  })
+
+  test('an established heading that drifts off -> DEVIATED', () => {
+    const c = clearance({ kind: 'HEADING', targetDegMag: 270, turn: 'left' }, { status: 'COMPLIED' })
+    const buf = samples([{ at: 0, nav: 270 }, { at: 300, nav: 300 }])
+    const a = verdictAt(c, buf, 300)
+    assertVerdict(a, 'DEVIATED')
+    assert.match(a.detail, /drift/i)
+  })
+
+  test('a small heading wander is not yet a deviation', () => {
+    // Wider band to leave than to arrive, so a heading held on the edge of
+    // tolerance does not flicker between two verdicts every few seconds.
+    const c = clearance({ kind: 'HEADING', targetDegMag: 270, turn: 'left' }, { status: 'COMPLIED' })
+    const buf = samples([{ at: 0, nav: 270 }, { at: 300, nav: 285 }])
+    assertVerdict(verdictAt(c, buf, 300), 'COMPLYING')
+  })
+
+  test('an established speed that drifts off -> DEVIATED', () => {
+    const c = clearance({ kind: 'SPEED', targetKt: 210 }, { status: 'COMPLIED' })
+    const buf = samples([{ at: 0, gs: 210 }, { at: 300, gs: 260 }])
+    assertVerdict(verdictAt(c, buf, 300), 'DEVIATED')
+  })
+
+  test('the response window does not re-apply once established', () => {
+    // 300 s after issue, far past both windows, and holding the altitude. This
+    // must not read as "no vertical response within 20 s".
+    const c = clearance(CLIMB_10K, { status: 'COMPLIED' })
+    const buf = samples([{ at: 300, alt: 10000, vs: 0 }])
+    const a = verdictAt(c, buf, 300)
+    assertVerdict(a, 'COMPLIED')
+    assert.doesNotMatch(a.detail, /no vertical response/)
   })
 })
 
