@@ -1,11 +1,12 @@
 'use client'
 
-// Phase 1 and 2 board: live traffic near SFO, plus callsign resolution.
-// No clearances yet -- the parser is phase 3 and the conformance engine phase 4.
+// Phases 1 to 3: live traffic near SFO, callsign resolution, and the clearance
+// parsed into a constraint. No verdict yet -- the conformance engine is phase 4.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { Aircraft, TrafficResponse } from '@/lib/types'
 import { resolveCallsign, suggestSameAirline } from '@/lib/callsign'
+import { parseInstruction, describeConstraint } from '@/lib/parser'
 
 const POLL_MS = 2000
 /** Beyond this many seconds since the last position, a track is not trustworthy. */
@@ -80,6 +81,9 @@ export default function Page() {
     () => (submitted && resolution?.outcome === 'none' ? suggestSameAirline(submitted, traffic) : []),
     [submitted, resolution, traffic],
   )
+  // Phase 3. The parse depends only on the text, never on the traffic picture,
+  // so it does not need to be redone on every snapshot.
+  const parsed = useMemo(() => (submitted ? parseInstruction(submitted) : null), [submitted])
 
   const rows = useMemo(() => {
     const f = filter.trim().toUpperCase()
@@ -145,7 +149,7 @@ export default function Page() {
             ref={inputRef}
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="united 328   ·   asiana two one two   ·   N172SP   ·   november one seven two sierra papa"
+            placeholder="united 328 climb and maintain one zero thousand"
             className="min-w-[320px] flex-1 rounded border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-sm text-slate-100 outline-none placeholder:text-slate-600 focus:border-sky-600"
           />
           <button
@@ -239,6 +243,42 @@ export default function Page() {
                   </p>
                 )}
               </>
+            )}
+
+            {/* Phase 3: the instruction, parsed by grammar into a constraint. */}
+            {parsed && (
+              <div className="mt-4 border-t border-slate-800 pt-4">
+                <div className="flex flex-wrap items-center gap-3">
+                  <span
+                    className={
+                      'rounded px-2 py-1 font-mono text-xs font-semibold ' +
+                      (parsed.ok ? 'bg-emerald-950 text-emerald-400' : 'bg-slate-800 text-slate-400')
+                    }
+                  >
+                    {parsed.ok ? 'PARSED' : 'NOT PARSED'}
+                  </span>
+                  {parsed.ok ? (
+                    <>
+                      <span className="text-sm text-slate-100">
+                        {describeConstraint(parsed.constraint)}
+                      </span>
+                      <span className="font-mono text-xs text-slate-500">
+                        form: {parsed.form}
+                      </span>
+                    </>
+                  ) : (
+                    <span className="text-sm text-slate-400">{parsed.reason}</span>
+                  )}
+                </div>
+                {parsed.ok && (
+                  <pre className="mt-3 overflow-x-auto rounded bg-slate-950 p-3 font-mono text-xs text-sky-300">
+{JSON.stringify(parsed.constraint, null, 2)}
+                  </pre>
+                )}
+                <p className="mt-2 text-xs text-slate-600">
+                  Parsed only. No conformance verdict yet — the engine is phase 4.
+                </p>
+              </div>
             )}
           </div>
         )}

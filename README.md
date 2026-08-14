@@ -17,7 +17,7 @@ track, and reports whether it is doing what it was told.
 |---|---|---|
 | 1 | Live traffic proxy and table | **done** |
 | 2 | Callsign resolution | **done** |
-| 3 | Clearance parser | not started |
+| 3 | Clearance parser | **done** |
 | 4 | Conformance engine | not started |
 | 5 | The board | not started |
 | 6 | Expo hardening (replay mode) | not started |
@@ -33,8 +33,19 @@ Copy-Item .env.example .env.local
 npm run dev
 ```
 
-Then open http://localhost:3000. No API key is needed for phases 1 and 2 —
+Then open http://localhost:3000. No API key is needed for phases 1 to 3 —
 adsb.lol is free and unauthenticated.
+
+Tests:
+
+```powershell
+npm test
+```
+
+The tests run on Node's built-in runner (`node --test`) using native TypeScript
+type stripping, so there is no test framework dependency. That is why the
+modules inside `lib/` import each other with explicit `.ts` extensions: Node
+resolves ES modules strictly and will not guess the extension for you.
 
 ## Environment
 
@@ -85,6 +96,31 @@ Three outcomes, and **an ambiguous match is never collapsed into a guess**:
 Zero padding is tolerated, because the same flight files as `UAL328` one day and
 `UAL0328` the next.
 
+**Clearance parsing.** A grammar, not a prompt. A grammar can be stepped
+through at 2am when a verdict looks wrong.
+
+```
+united 328 climb and maintain one zero thousand
+   -> { kind: 'ALTITUDE', targetFt: 10000, direction: 'up' }
+alaska 1340 turn left heading two seven zero
+   -> { kind: 'HEADING', targetDegMag: 270, turn: 'left' }
+jetblue 416 reduce speed to two one zero
+   -> { kind: 'SPEED', targetKt: 210 }
+```
+
+All nine forms from the phraseology table are covered, plus `flight level two
+five zero`, `FL250`, typed digits, and the optional words people drop (`climb
+maintain 8000`, `reduce speed 180`, `turn left 270`).
+
+Numbers are normalised the way they are spoken, not the way they are written:
+`one zero thousand` and `ten thousand` are both 10,000; `five thousand five
+hundred` is 5,500; `twenty five hundred` is 2,500; `zero niner zero` keeps its
+leading zero and is 90. `niner`, `tree` and `fife` are understood.
+
+Implausible values are rejected with a reason rather than guessed at — an
+altitude that is not a multiple of 100, a heading above 360, a speed of 900 kt,
+and `maintain 250` with no unit, which could be either an altitude or a speed.
+
 ## Layout
 
 ```
@@ -93,8 +129,13 @@ app/page.tsx               the board
 lib/adsb.ts                fetch + normalise raw ADS-B into Aircraft
 lib/telephony.ts           spoken airline name -> ICAO prefix
 lib/callsign.ts            free text -> ICAO callsign -> live aircraft
+lib/parser.ts              clearance grammar + aviation number normalisation
 lib/types.ts               shared data model
+tests/parser.test.ts       58 tests, every row of 4.4 and every form of 4.5
 ```
+
+`lib/parser.ts` is pure: no fetch, no clock, no React. `lib/conform.ts` will be
+the same when phase 4 lands.
 
 `hex`, the ICAO 24 bit address, is the primary key everywhere. It is burned into
 the transponder. Callsigns are reused by a different airframe tomorrow.

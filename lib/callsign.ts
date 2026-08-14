@@ -2,8 +2,12 @@
 // See CLAUDE.md sections 4.3 and 6 phase 2. Pure functions; the live traffic
 // list is passed in.
 
-import type { Aircraft, Resolution } from './types'
-import { TELEPHONY, TELEPHONY_KEYS_BY_LENGTH } from './telephony'
+import type { Aircraft, Resolution } from './types.ts'
+import { TELEPHONY, TELEPHONY_KEYS_BY_LENGTH } from './telephony.ts'
+// The instruction keyword list lives in parser.ts, which owns the clearance
+// grammar. Importing it keeps callsign extraction and clearance parsing from
+// ever disagreeing about where the callsign ends.
+import { findInstructionStart } from './parser.ts'
 
 /**
  * Spoken digits, including the ICAO variants. Controllers say "niner" so it
@@ -48,18 +52,6 @@ export const PHONETIC_LETTERS: Record<string, string> = {
   whiskey: 'W', xray: 'X', yankee: 'Y', zulu: 'Z',
 }
 
-/**
- * First word of an instruction. Everything before the first one of these is the
- * callsign. The full clearance grammar is phase 3; this list exists only so
- * that callsign extraction stops in the right place when the user types a whole
- * clearance rather than just a callsign.
- */
-const INSTRUCTION_KEYWORDS = new Set([
-  'climb', 'descend', 'maintain', 'turn', 'fly', 'heading', 'reduce',
-  'increase', 'speed', 'cross', 'expect', 'contact', 'cleared', 'hold',
-  'proceed', 'direct', 'resume', 'squawk', 'traffic',
-])
-
 /** Lowercase, strip punctuation, collapse whitespace. */
 export function tokenize(text: string): string[] {
   return text
@@ -72,7 +64,7 @@ export function tokenize(text: string): string[] {
 /** The part of the input naming an aircraft: everything before the instruction. */
 export function extractSpokenCallsign(text: string): string {
   const tokens = tokenize(text)
-  const stop = tokens.findIndex((t) => INSTRUCTION_KEYWORDS.has(t))
+  const stop = findInstructionStart(tokens)
   return (stop === -1 ? tokens : tokens.slice(0, stop)).join(' ')
 }
 

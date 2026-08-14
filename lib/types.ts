@@ -1,7 +1,6 @@
 // Shared data model. See CLAUDE.md section 5.
 //
-// Only the types phases 1 and 2 actually use live here. Constraint / Clearance /
-// Verdict arrive in phases 3 and 4 alongside the code that consumes them.
+// Clearance and Verdict arrive in phase 4 alongside the engine that consumes them.
 
 /**
  * A single ADS-B position report, normalised out of the adsb.lol v2 payload.
@@ -27,6 +26,15 @@ export type Aircraft = {
   seenPosSec: number // seconds since last position update
   ts: number // client receive time, ms
 }
+
+/**
+ * What a clearance requires the aircraft to do. One clearance carries exactly
+ * one constraint; an amendment is a new clearance that supersedes the old one.
+ */
+export type Constraint =
+  | { kind: 'ALTITUDE'; targetFt: number; direction: 'up' | 'down' | 'hold' }
+  | { kind: 'HEADING'; targetDegMag: number; turn: 'left' | 'right' | 'shortest' }
+  | { kind: 'SPEED'; targetKt: number }
 
 /** A snapshot of every aircraft in the polling radius at one instant. */
 export type TrafficSnapshot = {

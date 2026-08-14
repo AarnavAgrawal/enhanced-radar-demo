@@ -3,7 +3,7 @@
 // This module is the only place that knows the shape of the upstream JSON.
 // Everything downstream sees `Aircraft`, which is flat, typed, and unit-explicit.
 
-import type { Aircraft, TrafficSnapshot } from './types'
+import type { Aircraft, TrafficSnapshot } from './types.ts'
 
 /** SFO field reference point, and the radius we watch around it. */
 export const SFO = { lat: 37.6188, lon: -122.375, radiusNm: 40 } as const
