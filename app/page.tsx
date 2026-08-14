@@ -1,10 +1,10 @@
 'use client'
 
-// Phases 1 to 5. Live traffic near SFO, callsign resolution, clearance parsing,
-// the conformance engine, and the board that shows what it concluded.
+// Phases 1 to 6. Live traffic near SFO, callsign resolution, clearance parsing,
+// the conformance engine, the board, and ?replay=1 for when the wifi is not there.
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
-import type { Aircraft, TrafficResponse } from '@/lib/types'
+import type { Aircraft, ReplayPosition, TrafficResponse } from '@/lib/types'
 import { resolveCallsign, suggestSameAirline } from '@/lib/callsign'
 import { parseInstruction, describeConstraint } from '@/lib/parser'
 import { TOL } from '@/lib/conform'
@@ -12,6 +12,33 @@ import { boardReducer, initialBoardState, makeClearance } from '@/lib/board'
 import { ClearanceBoard } from './components/ClearanceBoard'
 
 const POLL_MS = 2000
+
+/**
+ * Prefilled examples, so nobody is typing a clearance while also talking. Each
+ * one exercises a different grammar form; the callsign is filled in from the
+ * live picture at click time, because a hardcoded flight number will not be
+ * airborne tomorrow.
+ */
+const PRESETS: { label: string; instruction: string; pick: (a: Aircraft) => boolean }[] = [
+  {
+    label: 'climb (should comply)',
+    instruction: 'climb and maintain',
+    pick: (a) => (a.vsFpm ?? 0) > 800 && (a.altFt ?? 0) > 3000,
+  },
+  {
+    label: 'descend (should deviate)',
+    instruction: 'descend and maintain',
+    pick: (a) => (a.vsFpm ?? 0) > 800 && (a.altFt ?? 0) > 8000,
+  },
+  {
+    label: 'maintain (should comply)',
+    instruction: 'maintain',
+    pick: (a) => Math.abs(a.vsFpm ?? 999) < 200 && (a.altFt ?? 0) > 5000,
+  },
+]
+
+/** Round to a whole thousand, which is how altitudes are assigned. */
+const toThousand = (ft: number) => Math.max(1000, Math.round(ft / 1000) * 1000)
 /** Beyond this many seconds since the last position, a track is not trustworthy. */
 const STALE_SEC = 15
 
@@ -41,19 +68,34 @@ export default function Page() {
   const [query, setQuery] = useState('')
   const [issueError, setIssueError] = useState<string | null>(null)
   const [filter, setFilter] = useState('')
+  const [replay, setReplay] = useState<ReplayPosition | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const [board, dispatch] = useReducer(boardReducer, initialBoardState)
+
+  // ?replay=1 runs the whole app off the committed recording, no network.
+  const isReplay = useMemo(() => {
+    if (typeof window === 'undefined') return false
+    return new URLSearchParams(window.location.search).get('replay') === '1'
+  }, [])
+  /** When this browser started playback, so the server can stay stateless. */
+  const replayStartedAt = useRef<number | null>(null)
 
   // Poll the proxy. A failed poll keeps the previous picture on screen and
   // raises the stale badge instead of blanking the board.
   const poll = useCallback(async () => {
     try {
-      const res = await fetch('/api/traffic', { cache: 'no-store' })
+      let url = '/api/traffic'
+      if (isReplay) {
+        replayStartedAt.current ??= Date.now()
+        url += `?replay=1&t=${Date.now() - replayStartedAt.current}`
+      }
+      const res = await fetch(url, { cache: 'no-store' })
       const body: TrafficResponse = await res.json()
       if (body.ok) {
         setTraffic(body.aircraft)
         setFetchedAt(body.fetchedAt)
         setSource(body.source)
+        setReplay(body.replay ?? null)
         setError(null)
       } else {
         setError(body.error)
@@ -61,7 +103,7 @@ export default function Page() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
-  }, [])
+  }, [isReplay])
 
   useEffect(() => {
     poll()
@@ -120,6 +162,34 @@ export default function Page() {
     [traffic],
   )
 
+  /**
+   * Fill the box from a preset, choosing a live aircraft that is currently in a
+   * state that makes the example land the way the label says it will.
+   */
+  const applyPreset = useCallback(
+    (preset: (typeof PRESETS)[number]) => {
+      const candidates = traffic.filter(
+        (a) => a.callsign && !a.onGround && a.seenPosSec < 5 && preset.pick(a),
+      )
+      if (candidates.length === 0) {
+        setIssueError(`no aircraft is currently in the right state for "${preset.label}"`)
+        return
+      }
+      const a = candidates[0]
+      const alt = a.altFt ?? 10000
+      const target =
+        preset.instruction === 'climb and maintain'
+          ? toThousand(alt + 5000)
+          : preset.instruction === 'descend and maintain'
+            ? toThousand(alt - 4000)
+            : toThousand(alt)
+      setQuery(`${a.callsign} ${preset.instruction} ${target}`)
+      setIssueError(null)
+      inputRef.current?.focus()
+    },
+    [traffic],
+  )
+
   const submit = useCallback(() => {
     if (!typed) return
     const r = resolveCallsign(typed, traffic)
@@ -166,6 +236,11 @@ export default function Page() {
             <span className="ml-3 font-mono text-sm font-normal text-slate-500">SFO · 40 nm</span>
           </h1>
           <div className="flex items-center gap-3 font-mono text-xs">
+            {isReplay && (
+              <span className="rounded bg-violet-950 px-2 py-1 font-semibold text-violet-300">
+                REPLAY{replay ? ` ${replay.frame + 1}/${replay.frames}` : ''}
+              </span>
+            )}
             <span className="text-slate-500">{source}</span>
             <span
               className={
@@ -189,6 +264,13 @@ export default function Page() {
           ADS-B tracks and the conformance logic are real; the instruction is not transmitted.
           Compliance means the aircraft happened to already be doing that. The output is a
           candidate for review, not a finding.
+          {isReplay && (
+            <span className="ml-1 text-violet-300">
+              Replay mode: these are recorded tracks
+              {replay ? ` from ${new Date(replay.recordedAt).toLocaleString()}` : ''}, not live
+              traffic.
+            </span>
+          )}
         </p>
         {error && (
           <p className="mt-2 font-mono text-xs text-amber-500/80">
@@ -223,6 +305,20 @@ export default function Page() {
             Issue
           </button>
         </form>
+
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <span className="font-mono text-xs text-slate-600">presets:</span>
+          {PRESETS.map((p) => (
+            <button
+              key={p.label}
+              type="button"
+              onClick={() => applyPreset(p)}
+              className="rounded border border-slate-700 px-2 py-1 font-mono text-xs text-slate-400 hover:border-slate-500 hover:text-slate-200"
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
 
         {/* What would be issued, updated as it is typed. */}
         {typed && (

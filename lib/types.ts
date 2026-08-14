@@ -39,15 +39,22 @@ export type Constraint =
 /** A snapshot of every aircraft in the polling radius at one instant. */
 export type TrafficSnapshot = {
   aircraft: Aircraft[]
-  /** Which upstream actually served this snapshot. */
-  source: 'adsb.lol' | 'airplanes.live'
+  /** Which upstream actually served this snapshot, or the committed recording. */
+  source: 'adsb.lol' | 'airplanes.live' | 'replay'
   /** Server fetch time, ms since epoch. */
   fetchedAt: number
 }
 
+/** Where playback has got to, present only when serving a recording. */
+export type ReplayPosition = {
+  frame: number
+  frames: number
+  recordedAt: string
+}
+
 /** What the /api/traffic route returns, success or failure. */
 export type TrafficResponse =
-  | ({ ok: true } & TrafficSnapshot)
+  | ({ ok: true; replay?: ReplayPosition } & TrafficSnapshot)
   | { ok: false; error: string; fetchedAt: number }
 
 /**
@@ -109,4 +116,18 @@ export type Clearance = {
   status: Verdict
   detail: string // one human readable line, always populated
   history: TrackSample[] // samples since issue, for the sparkline
+}
+
+/** One recorded snapshot in the replay file. */
+export type ReplayFrame = {
+  /** Milliseconds after the recording started. */
+  offsetMs: number
+  aircraft: Aircraft[]
+}
+
+/** The committed replay recording, played back when the network cannot be trusted. */
+export type ReplayFile = {
+  recordedAt: string
+  intervalMs: number
+  frames: ReplayFrame[]
 }

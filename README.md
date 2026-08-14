@@ -20,7 +20,7 @@ track, and reports whether it is doing what it was told.
 | 3 | Clearance parser | **done** |
 | 4 | Conformance engine | **done** |
 | 5 | The board | **done** |
-| 6 | Expo hardening (replay mode) | not started |
+| 6 | Expo hardening (replay mode) | **done**, deploy pending |
 | 7 | Voice (Deepgram) | not started |
 
 ## Running it
@@ -46,6 +46,42 @@ The tests run on Node's built-in runner (`node --test`) using native TypeScript
 type stripping, so there is no test framework dependency. That is why the
 modules inside `lib/` import each other with explicit `.ts` extensions: Node
 resolves ES modules strictly and will not guess the extension for you.
+
+## Replay mode, for when the wifi is not there
+
+The demo runs off a committed recording with no network at all:
+
+```
+http://localhost:3000/?replay=1
+```
+
+The header turns violet and says REPLAY with the frame counter, and the
+disclosure line names the date the tracks were recorded, so nobody watching can
+mistake it for live traffic. Playback loops, because a demo that dies after ten
+minutes dies in the middle of a conversation.
+
+To re-record (do this the night before, then commit the file):
+
+```powershell
+npm run record:replay            # 300 frames at 2 s, about 10 minutes
+npm run record:replay -- 60 2000 # a shorter one for testing
+```
+
+Recorded frames are restamped onto the current clock on playback. Without that
+every aircraft would read as hours stale and the engine would correctly, and
+uselessly, report UNKNOWN for all of them. `seen_pos` is left as recorded, so an
+aircraft that was genuinely stale during the recording still reads as stale.
+
+## Deploying
+
+```powershell
+npm i -g vercel
+vercel            # first run links the project
+vercel --prod
+```
+
+Test the deployed URL on a phone over **cell data, not wifi**. The venue network
+is the thing most likely to fail, and cell data is the closest thing to it.
 
 ## Environment
 
@@ -168,6 +204,15 @@ band than arriving at it did, so a heading held on the edge of tolerance does
 not flicker between verdicts. DEVIATED is terminal: it records something that
 happened at a time.
 
+**Expo hardening.** Three preset buttons fill the box with a worked example, so
+nobody is typing a clearance while also talking. The callsign is filled in from
+the live picture at click time rather than hardcoded, because a flight number
+that is airborne tonight will not be tomorrow, and each preset picks an aircraft
+currently in a state that makes the example land the way its label says.
+
+A failed poll never blanks the board: the server holds the last good picture and
+the header shows a stale badge with its age.
+
 ## Layout
 
 ```
@@ -180,6 +225,8 @@ lib/callsign.ts            free text -> ICAO callsign -> live aircraft
 lib/parser.ts              clearance grammar + aviation number normalisation
 lib/conform.ts             the verdict engine, pure functions only
 lib/board.ts               session state, pure reducer
+lib/replay.ts              playback of the committed recording
+scripts/record-replay.ts   records data/replay-sfo.json
 lib/types.ts               shared data model
 tests/parser.test.ts       58 tests, every row of 4.4 and every form of 4.5
 tests/conform.test.ts      49 tests against synthetic track buffers
