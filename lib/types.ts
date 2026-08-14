@@ -59,3 +59,54 @@ export type Resolution =
   | { outcome: 'exact'; spokenCallsign: string; resolvedCallsign: string; aircraft: Aircraft }
   | { outcome: 'ambiguous'; spokenCallsign: string; resolvedCallsign: string | null; candidates: Aircraft[] }
   | { outcome: 'none'; spokenCallsign: string; resolvedCallsign: string | null; reason: string }
+
+/**
+ * One position report retained for a clearance, sampled from the live feed.
+ *
+ * A lighter thing than an Aircraft: the conformance engine needs the numbers
+ * that move and the timestamp, not the identity, which is already on the
+ * clearance.
+ */
+export type TrackSample = {
+  ts: number // client receive time, ms
+  altFt: number | null
+  vsFpm: number | null
+  gsKt: number | null
+  trackTrue: number | null // degrees TRUE
+  navHeading: number | null // degrees MAGNETIC, autopilot selected, when broadcast
+  seenPosSec: number
+}
+
+/**
+ * What the engine concluded. Deliberately not a boolean: "we cannot tell" is a
+ * distinct and frequent answer, and collapsing it into "no deviation" is how a
+ * monitoring tool quietly stops being trustworthy.
+ */
+export type Verdict =
+  | 'PENDING' // issued, waiting for the first response
+  | 'COMPLYING' // moving the right way, not there yet
+  | 'COMPLIED' // established at the assigned value
+  | 'DEVIATED' // moving the wrong way, or busted through
+  | 'SUPERSEDED' // a newer clearance of the same kind replaced this one
+  | 'UNKNOWN' // track lost, stale data, or ambiguous callsign
+
+/** A verdict plus the evidence for it. The detail line is never empty. */
+export type Assessment = {
+  verdict: Verdict
+  detail: string
+}
+
+/** One synthetic clearance issued at one aircraft. */
+export type Clearance = {
+  id: string
+  hex: string // resolved aircraft, the stable key
+  spokenText: string // exactly what the user typed or said
+  spokenCallsign: string // "united 328"
+  resolvedCallsign: string // "UAL328"
+  registration: string | null // "N27239"
+  constraint: Constraint
+  issuedAt: number
+  status: Verdict
+  detail: string // one human readable line, always populated
+  history: TrackSample[] // samples since issue, for the sparkline
+}

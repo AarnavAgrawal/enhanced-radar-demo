@@ -18,7 +18,7 @@ track, and reports whether it is doing what it was told.
 | 1 | Live traffic proxy and table | **done** |
 | 2 | Callsign resolution | **done** |
 | 3 | Clearance parser | **done** |
-| 4 | Conformance engine | not started |
+| 4 | Conformance engine | **done** |
 | 5 | The board | not started |
 | 6 | Expo hardening (replay mode) | not started |
 | 7 | Voice (Deepgram) | not started |
@@ -121,6 +121,35 @@ Implausible values are rejected with a reason rather than guessed at — an
 altitude that is not a multiple of 100, a heading above 360, a speed of 900 kt,
 and `maintain 250` with no unit, which could be either an altitude or a speed.
 
+**Conformance verdicts.** `evaluate(clearance, trackBuffer, now)` returns a
+verdict and a detail line that names the evidence:
+
+```
+COMPLYING   climbing at 3,136 fpm through 16,925 ft, 3,075 ft to run to the
+            assigned 20,000 ft
+PENDING     assigned a right turn to 090 deg, no turn yet from 073 deg, 8 s of
+            the 20 s window remaining
+DEVIATED    assigned descent to 12,000 ft, aircraft is climbing at 3,008 fpm
+            at 17,550 ft
+SUPERSEDED  superseded by a later altitude clearance for FDX5043
+```
+
+There is never a bare verdict. `DEVIATED` on its own is an accusation; with the
+altitudes and the rate attached it is an observation someone can check.
+
+Amendments close the old clearance as `SUPERSEDED` rather than letting it fail
+the response window it can no longer meet. Without that, the board fills with
+false deviations the moment anyone amends anything, which is most of what real
+ATC does.
+
+Stale or missing data returns `UNKNOWN`, never `DEVIATED`. An aircraft whose
+position is 40 s old is not deviating, it is unobserved.
+
+Headings are compared in degrees magnetic. `nav_heading` is used when the
+autopilot broadcasts it; otherwise ground track is corrected by 13 degrees for
+variation and the detail line says so, because track is not heading in a
+crosswind.
+
 ## Layout
 
 ```
@@ -130,12 +159,16 @@ lib/adsb.ts                fetch + normalise raw ADS-B into Aircraft
 lib/telephony.ts           spoken airline name -> ICAO prefix
 lib/callsign.ts            free text -> ICAO callsign -> live aircraft
 lib/parser.ts              clearance grammar + aviation number normalisation
+lib/conform.ts             the verdict engine, pure functions only
 lib/types.ts               shared data model
 tests/parser.test.ts       58 tests, every row of 4.4 and every form of 4.5
+tests/conform.test.ts      49 tests against synthetic track buffers
 ```
 
-`lib/parser.ts` is pure: no fetch, no clock, no React. `lib/conform.ts` will be
-the same when phase 4 lands.
+`lib/parser.ts` and `lib/conform.ts` are pure: no fetch, no clock read, no
+React. `evaluate(clearance, buffer, now)` takes the time as an argument, which
+is what makes every verdict reproducible and what will let replay mode drive a
+synthetic clock. Three of the tests assert that purity by reading the source.
 
 `hex`, the ICAO 24 bit address, is the primary key everywhere. It is burned into
 the transponder. Callsigns are reused by a different airframe tomorrow.
