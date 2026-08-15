@@ -11,6 +11,15 @@ track, and reports whether it is doing what it was told.
 > real. This is a test harness that lets a human drive the conformance engine
 > directly, standing in for a speech recognition pipeline that is out of scope.
 
+## Documentation
+
+| Document | For |
+|---|---|
+| [`BRIEFING.md`](BRIEFING.md) | Read before demoing. The demo script, the three points worth making, the aviation details a pilot will check, and the questions you will get. |
+| [`PROJECT.md`](PROJECT.md) | The full reference. Stack, architecture, every feature, every tolerance, the limitations, and the bugs that only showed up under real data. |
+| `README.md` | This file. How to run it and what it does. |
+| `CLAUDE.md` | The original build spec. |
+
 ## Status
 
 | Phase | | |
