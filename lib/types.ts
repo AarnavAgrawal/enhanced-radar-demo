@@ -117,6 +117,12 @@ export type Clearance = {
   status: Verdict
   detail: string // one human readable line, always populated
   history: TrackSample[] // samples since issue, for the sparkline
+  /**
+   * The clearance this one replaced, when it amended an earlier instruction.
+   * The old strip is pulled from the bay rather than left to clutter it, so
+   * this is what remains of it.
+   */
+  amendedFrom: Constraint | null
 }
 
 /** One recorded snapshot in the replay file. */

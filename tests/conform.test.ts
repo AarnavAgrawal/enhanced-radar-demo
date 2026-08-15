@@ -56,6 +56,7 @@ function clearance(constraint: Constraint, overrides: Partial<Clearance> = {}): 
     status: 'PENDING',
     detail: '',
     history: [],
+    amendedFrom: null,
     ...overrides,
   }
 }

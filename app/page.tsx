@@ -7,10 +7,17 @@ import type { Aircraft, ReplayPosition, TrafficResponse } from '@/lib/types'
 import { resolveCallsign, suggestSameAirline } from '@/lib/callsign'
 import { parseInstruction, describeConstraint } from '@/lib/parser'
 import { TOL } from '@/lib/conform'
-import { boardReducer, initialBoardState, makeClearance } from '@/lib/board'
-import { altitudeTag, formatAltitude, formatHeading, formatVerticalRate } from '@/lib/format'
+import { boardReducer, initialBoardState, makeClearance, MAX_STRIPS } from '@/lib/board'
+import {
+  formatAltitude,
+  formatAltitudeShort,
+  formatHeading,
+  formatVerticalRate,
+  TRANSITION_ALTITUDE_FT,
+} from '@/lib/format'
 import { StripBay } from './components/ClearanceStrip'
 import { PushToTalk } from './components/PushToTalk'
+import { ScopePanel } from './components/ScopePanel'
 
 const POLL_MS = 2000
 
@@ -49,6 +56,7 @@ export default function Page() {
   const [issueError, setIssueError] = useState<string | null>(null)
   const [filter, setFilter] = useState('')
   const [replay, setReplay] = useState<ReplayPosition | null>(null)
+  const [scopeOpen, setScopeOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const [board, dispatch] = useReducer(boardReducer, initialBoardState)
 
@@ -226,6 +234,19 @@ export default function Page() {
         </div>
 
         <div className="flex items-center gap-5 font-mono text-xs tnum">
+          <button
+            type="button"
+            onClick={() => setScopeOpen((v) => !v)}
+            className={
+              'border px-2 py-1 uppercase tracking-wider ' +
+              (scopeOpen
+                ? 'border-ink-dim text-ink'
+                : 'border-rule text-ink-faint hover:border-ink-faint hover:text-ink-dim')
+            }
+            aria-pressed={scopeOpen}
+          >
+            Scope
+          </button>
           {isReplay && (
             <span className="border border-holder-unknown px-2 py-1 text-holder-unknown uppercase tracking-wider">
               Replay {replay ? `${replay.frame + 1}/${replay.frames}` : ''}
@@ -243,25 +264,33 @@ export default function Page() {
               }
               aria-hidden
             />
-            {status === 'fault' ? 'holding last' : status === 'stale' ? `stale ${ageSec}s` : `live ${ageSec ?? '—'}s`}
+            {status === 'fault'
+              ? 'holding last'
+              : status === 'stale'
+                ? `stale ${ageSec}s`
+                : `live ${ageSec ?? '--'}s`}
           </span>
           <span className="text-ink-faint">{traffic.length} contacts</span>
         </div>
       </header>
 
-      {/* The disclosure that has to come first. */}
-      <p className="border-b border-rule py-3 text-xs leading-relaxed text-ink-dim">
+      {/* A short marker stays in the header; the full disclosure is in Notes at
+          the bottom. CLAUDE.md asked for the whole paragraph up here, so this is a
+          deliberate departure: the claim still leads, but the explanation no longer
+          sits between the operator and the command line. */}
+      <p className="border-b border-rule py-2.5 text-xs text-ink-dim">
         <span className="label mr-2 text-signal-stale">Synthetic</span>
-        Clearances issued here are never transmitted and no aircraft receives them. The aircraft,
-        the ADS-B tracks and the conformance logic are real. Compliance means the aircraft happened
-        to already be doing it. Output is a candidate for review, not a finding.
+        Nothing here is transmitted. No aircraft receives these clearances.{' '}
+        <a href="#notes" className="underline decoration-dotted underline-offset-2 hover:text-ink">
+          What that means
+        </a>
         {isReplay && replay && (
-          <span className="ml-1 text-holder-unknown">
+          <span className="ml-2 text-holder-unknown">
             Replay: recorded tracks from {new Date(replay.recordedAt).toLocaleString()}, not live
             traffic.
           </span>
         )}
-      </p>
+</p>
 
       {/* Command line. */}
       <section className="py-6">
@@ -321,8 +350,8 @@ export default function Page() {
               <span className="label">aircraft</span>
               {resolution?.outcome === 'exact' ? (
                 <span className="text-ink">
-                  {resolution.resolvedCallsign} · {resolution.aircraft.registration ?? '—'} ·{' '}
-                  {resolution.aircraft.type ?? '—'} ·{' '}
+                  {resolution.resolvedCallsign} · {resolution.aircraft.registration ?? '---'} ·{' '}
+                  {resolution.aircraft.type ?? '---'} ·{' '}
                   {resolution.aircraft.altFt != null
                     ? formatAltitude(resolution.aircraft.altFt)
                     : 'ground'}
@@ -330,7 +359,7 @@ export default function Page() {
               ) : (
                 <span className="text-ink-faint">
                   {resolution?.outcome === 'ambiguous'
-                    ? `${resolution.candidates.length} candidates — pick one`
+                    ? `${resolution.candidates.length} candidates, pick one`
                     : (resolution?.reason ?? 'no callsign yet')}
                 </span>
               )}
@@ -338,7 +367,7 @@ export default function Page() {
             <span className="flex items-center gap-2">
               <span className="label">clearance</span>
               <span className={parsed?.ok ? 'text-ink' : 'text-ink-faint'}>
-                {parsed?.ok ? describeConstraint(parsed.constraint) : (parsed?.reason ?? '—')}
+                {parsed?.ok ? describeConstraint(parsed.constraint) : (parsed?.reason ?? '---')}
               </span>
             </span>
           </div>
@@ -346,7 +375,7 @@ export default function Page() {
 
         {issueError && <p className="mt-2 text-xs text-signal-stale">{issueError}</p>}
 
-        {/* Ambiguity is resolved by the operator, never by the app — including
+        {/* Ambiguity is resolved by the operator, never by the app, including
             when the clearance arrived by voice. */}
         {resolution?.outcome === 'ambiguous' && (
           <div className="mt-2 flex flex-col gap-px bg-rule">
@@ -356,7 +385,7 @@ export default function Page() {
                 onClick={() => issue(typed, c)}
                 className="bg-bay-raised px-4 py-2.5 text-left font-mono text-xs text-ink hover:bg-rule"
               >
-                {c.callsign} · {c.hex} · {c.registration ?? '—'} · {c.type ?? '—'} ·{' '}
+                {c.callsign} · {c.hex} · {c.registration ?? '---'} · {c.type ?? '---'} ·{' '}
                 {c.altFt != null ? formatAltitude(c.altFt) : 'ground'}
               </button>
             ))}
@@ -375,8 +404,9 @@ export default function Page() {
         <div className="mb-3 flex items-baseline justify-between border-b border-rule pb-2">
           <h2 className="label text-ink-dim">Strip bay</h2>
           <span className="font-mono text-[11px] text-ink-faint tnum">
-            {board.clearances.length} strips · response window {TOL.responseWindowSec}s · level band{' '}
-            ±{TOL.altLevelBandFt} ft · heading ±{TOL.hdgToleranceDeg}°
+            {board.clearances.length}/{MAX_STRIPS} strips · response window{' '}
+            {TOL.responseWindowSec}s · level band ±{TOL.altLevelBandFt} ft · heading ±
+            {TOL.hdgToleranceDeg}°
           </span>
         </div>
         <StripBay clearances={board.clearances} now={now} />
@@ -402,7 +432,7 @@ export default function Page() {
                 <Th>callsign</Th>
                 <Th>tail</Th>
                 <Th>type</Th>
-                <Th right>alt</Th>
+                <Th right>altitude</Th>
                 <Th right>vs</Th>
                 <Th right>gs</Th>
                 <Th right>trk°T</Th>
@@ -424,17 +454,19 @@ export default function Page() {
                   >
                     <Td className={onStrip ? 'text-ink' : 'text-ink'}>
                       {onStrip && <span className="mr-1.5 text-holder-complying">▌</span>}
-                      {a.callsign ?? '—'}
+                      {a.callsign ?? '---'}
                     </Td>
-                    <Td>{a.registration ?? '—'}</Td>
-                    <Td>{a.type ?? '—'}</Td>
-                    <Td right>{a.onGround ? 'GND' : a.altFt != null ? altitudeTag(a.altFt) : '—'}</Td>
-                    <Td right>{a.vsFpm != null ? formatVerticalRate(a.vsFpm) : '—'}</Td>
-                    <Td right>{a.gsKt != null ? Math.round(a.gsKt) : '—'}</Td>
-                    <Td right>{a.trackTrue != null ? formatHeading(a.trackTrue) : '—'}</Td>
-                    <Td right>{a.navHeading != null ? formatHeading(a.navHeading) : '—'}</Td>
+                    <Td>{a.registration ?? '---'}</Td>
+                    <Td>{a.type ?? '---'}</Td>
+                    <Td right>
+                      {a.onGround ? 'GND' : a.altFt != null ? formatAltitudeShort(a.altFt) : '---'}
+                    </Td>
+                    <Td right>{a.vsFpm != null ? formatVerticalRate(a.vsFpm) : '---'}</Td>
+                    <Td right>{a.gsKt != null ? Math.round(a.gsKt) : '---'}</Td>
+                    <Td right>{a.trackTrue != null ? formatHeading(a.trackTrue) : '---'}</Td>
+                    <Td right>{a.navHeading != null ? formatHeading(a.navHeading) : '---'}</Td>
                     <Td right className={stale ? 'text-signal-stale' : ''}>
-                      {Number.isFinite(a.seenPosSec) ? a.seenPosSec.toFixed(0) : '—'}
+                      {Number.isFinite(a.seenPosSec) ? a.seenPosSec.toFixed(0) : '---'}
                     </Td>
                   </tr>
                 )
@@ -451,13 +483,74 @@ export default function Page() {
         </div>
 
         <p className="mt-3 max-w-3xl text-xs leading-relaxed text-ink-faint">
-          Altitude is shown in hundreds of feet, the way a radar data block shows it. Track is
+          Altitude is shown in feet below {TRANSITION_ALTITUDE_FT.toLocaleString('en-US')} ft
+          and as a flight level at or above it, which is where flight levels begin. Track is
           degrees true; headings are judged in degrees magnetic, corrected {TOL.magVarDeg}° for
-          variation at SFO. Ground track is not heading — wind pushes the aircraft sideways — so the
-          autopilot&rsquo;s selected heading is preferred where it is broadcast. Tracks older than{' '}
-          {TOL.staleTrackSec}s are judged UNKNOWN, never DEVIATED.
-        </p>
+          variation at SFO. Ground track is not heading, because wind pushes the aircraft
+          sideways, so the autopilot&rsquo;s selected heading is preferred where it is broadcast.
+          Tracks older than {TOL.staleTrackSec}s are judged UNKNOWN, never DEVIATED.
+</p>
       </section>
+
+      {/* Notes. The disclosure lives here in full, linked from the header. */}
+      <section id="notes" className="mt-14 border-t border-rule pt-6">
+        <h2 className="label text-ink-dim">Notes</h2>
+        <div className="mt-4 grid gap-8 md:grid-cols-2">
+          <div>
+            <h3 className="text-xs font-semibold tracking-wide uppercase text-signal-stale">
+              The clearances are synthetic
+            </h3>
+            <p className="mt-2 max-w-prose text-xs leading-relaxed text-ink-dim">
+              Clearances issued here are never transmitted and no aircraft receives them. The
+              aircraft, the ADS-B tracks and the conformance logic are real; the instruction is not.
+              COMPLIED means the aircraft happened to already be doing what it was told. DEVIATED
+              means the instruction was chosen to contradict what it was doing. The output is a
+              candidate for review, not a finding.
+            </p>
+          </div>
+          <div>
+            <h3 className="text-xs font-semibold tracking-wide uppercase text-ink-dim">
+              What the numbers can and cannot tell you
+            </h3>
+            <ul className="mt-2 max-w-prose space-y-1.5 text-xs leading-relaxed text-ink-faint">
+              <li>
+                Ground track is not heading. Wind pushes the aircraft sideways, so a track based
+                heading check is approximate unless the autopilot broadcasts its selected heading.
+              </li>
+              <li>
+                Ground speed is not indicated airspeed. ATC assigns airspeed; ADS-B reports ground
+                speed, and the difference is the wind.
+              </li>
+              <li>
+                ADS-B coverage degrades at low altitude, which is where the interesting events
+                happen.
+              </li>
+              <li>
+                A track older than {TOL.staleTrackSec}s is reported UNKNOWN. An unobserved aircraft
+                is never called a deviation.
+              </li>
+              <li>
+                Amending a clearance replaces its strip. The old instruction stops applying rather
+                than failing a response window it can no longer meet.
+              </li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      {scopeOpen && (
+        <ScopePanel
+          traffic={traffic}
+          watched={watched}
+          onClose={() => setScopeOpen(false)}
+          onPick={(a) => {
+            if (!a.callsign) return
+            setQuery(`${a.callsign} `)
+            setIssueError(null)
+            inputRef.current?.focus()
+          }}
+        />
+      )}
     </main>
   )
 }

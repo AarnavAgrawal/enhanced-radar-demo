@@ -40,8 +40,30 @@ export function formatFeet(ft: number): string {
 }
 
 /**
- * Altitude as it appears in a radar data block: hundreds of feet, three digits.
- * 35,000 ft is "350" and 8,500 ft is "085".
+ * Altitude with the unit left to the column header: "9,600" below the
+ * transition altitude, "FL350" at or above it.
+ *
+ * Used where space is tight but the number must still not be mistaken for a
+ * flight level. A bare "096" is correct on a radar scope, where every altitude
+ * is understood to be in hundreds of feet, and wrong everywhere else: read as a
+ * flight level it says FL096, and there is no such thing. The lowest usable
+ * flight level in the US is FL180.
+ */
+export function formatAltitudeShort(ft: number): string {
+  const rounded = Math.round(ft)
+  if (rounded >= TRANSITION_ALTITUDE_FT) {
+    return `FL${String(Math.round(rounded / 100)).padStart(3, '0')}`
+  }
+  return rounded.toLocaleString('en-US')
+}
+
+/**
+ * Altitude as a radar data block shows it: hundreds of feet, three digits, no
+ * unit. 35,000 ft is "350" and 8,500 ft is "085".
+ *
+ * Correct ONLY on the scope, where the convention is understood and every
+ * target is labelled the same way. Anywhere a reader might take it for a flight
+ * level, use formatAltitude or formatAltitudeShort instead.
  */
 export function altitudeTag(ft: number): string {
   return String(Math.round(ft / 100)).padStart(3, '0')
@@ -56,5 +78,5 @@ export function formatHeading(deg: number): string {
 /** Vertical rate, signed, in feet per minute. */
 export function formatVerticalRate(fpm: number): string {
   const r = Math.round(fpm)
-  return `${r > 0 ? '+' : r < 0 ? '−' : ''}${Math.abs(r).toLocaleString('en-US')}`
+  return `${r > 0 ? '+' : r < 0 ? '-' : ''}${Math.abs(r).toLocaleString('en-US')}`
 }

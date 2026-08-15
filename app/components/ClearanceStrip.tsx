@@ -11,7 +11,7 @@ import type { Clearance, Verdict } from '@/lib/types'
 import { describeConstraint } from '@/lib/parser'
 import { TOL } from '@/lib/conform'
 import { trendSeries } from '@/lib/board'
-import { altitudeTag, formatAltitude, formatHeading, formatVerticalRate } from '@/lib/format'
+import { formatAltitude, formatAltitudeShort, formatHeading, formatVerticalRate } from '@/lib/format'
 import { Sparkline } from './Sparkline'
 
 const PAPER: Record<Verdict, string> = {
@@ -33,21 +33,25 @@ const HOLDER: Record<Verdict, string> = {
 }
 
 /**
- * The clearance in strip shorthand, the way it would be written by hand.
- * Altitudes go in hundreds of feet, headings keep three digits, speeds carry K.
+ * The clearance in strip shorthand.
+ *
+ * A real strip writes altitude in hundreds of feet, which is unambiguous on
+ * paper in a tower but not on a screen next to a live readout: "096" read as a
+ * flight level says FL096, and no such level exists. So the altitude keeps its
+ * unit, and only the direction is abbreviated.
  */
 function shorthand(c: Clearance['constraint']): string {
   switch (c.kind) {
     case 'ALTITUDE': {
       const mark = c.direction === 'up' ? '↑' : c.direction === 'down' ? '↓' : '='
-      return `${mark}${altitudeTag(c.targetFt)}`
+      return `${mark} ${formatAltitudeShort(c.targetFt)}`
     }
     case 'HEADING': {
       const mark = c.turn === 'left' ? 'L' : c.turn === 'right' ? 'R' : 'H'
       return `${mark}${formatHeading(c.targetDegMag)}`
     }
     case 'SPEED':
-      return `${c.targetKt}K`
+      return `${c.targetKt} kt`
   }
 }
 
@@ -86,7 +90,7 @@ export function ClearanceStrip({ clearance: c, now }: { clearance: Clearance; no
               {c.resolvedCallsign}
             </div>
             <div className="mt-1.5 font-mono text-xs text-strip-ink-dim">
-              {c.registration ?? '—'} · {c.hex}
+              {c.registration ?? '---'} · {c.hex}
             </div>
           </Field>
 
@@ -95,19 +99,24 @@ export function ClearanceStrip({ clearance: c, now }: { clearance: Clearance; no
               <span className="font-mono text-base leading-none font-semibold tnum">
                 {shorthand(c.constraint)}
               </span>
+              {c.amendedFrom && (
+                <span className="font-mono text-[10px] text-strip-ink-dim line-through">
+                  {shorthand(c.amendedFrom)}
+                </span>
+              )}
             </div>
-            <div className="mt-1.5 text-xs text-strip-ink-dim">{describeConstraint(c.constraint)}</div>
+            <div className="mt-1.5 text-xs text-strip-ink-dim">
+              {describeConstraint(c.constraint)}
+              {c.amendedFrom && <span className="ml-1 uppercase">(amended)</span>}
+            </div>
           </Field>
 
           <Field label="now" className="border-l">
             <div className="font-mono text-base leading-none tnum">
-              {latest?.altFt != null ? altitudeTag(latest.altFt) : '—'}
-              <span className="ml-2 text-strip-ink-dim">
-                {latest?.vsFpm != null ? formatVerticalRate(latest.vsFpm) : '—'}
-              </span>
+              {latest?.altFt != null ? formatAltitude(latest.altFt) : '---'}
             </div>
             <div className="mt-1.5 font-mono text-xs text-strip-ink-dim tnum">
-              {latest?.altFt != null ? formatAltitude(latest.altFt) : '—'}
+              {latest?.vsFpm != null ? `${formatVerticalRate(latest.vsFpm)} fpm` : '---'}
               {latest?.gsKt != null && ` · ${Math.round(latest.gsKt)} kt`}
             </div>
           </Field>
@@ -142,7 +151,9 @@ export function ClearanceStrip({ clearance: c, now }: { clearance: Clearance; no
             {c.detail}
           </p>
           {c.spokenText && (
-            <p className="mt-1 font-mono text-[11px] text-strip-ink-dim">“{c.spokenText}”</p>
+            <p className="mt-1 font-mono text-[11px] text-strip-ink-dim">
+              &ldquo;{c.spokenText}&rdquo;
+            </p>
           )}
         </div>
       </div>

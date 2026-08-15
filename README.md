@@ -34,7 +34,7 @@ Copy-Item .env.example .env.local
 npm run dev
 ```
 
-Then open http://localhost:3000. No API key is needed for phases 1 to 3 —
+Then open http://localhost:3000. No API key is needed for phases 1 to 3.
 adsb.lol is free and unauthenticated.
 
 Tests:
@@ -50,7 +50,7 @@ resolves ES modules strictly and will not guess the extension for you.
 
 ## Morning of the demo
 
-1. `npm test` — 114 tests, takes under a second. If this fails, do not demo.
+1. `npm test`. Takes under a second. If this fails, do not demo.
 2. Open the deployed URL **on your phone over cell data**. Confirm aircraft
    appear and the numbers move.
 3. Click a preset, press Issue, watch a verdict land. That exercises the whole
@@ -144,10 +144,10 @@ registration (`november one seven two sierra papa`).
 
 Three outcomes, and **an ambiguous match is never collapsed into a guess**:
 
-- `exact` — one live aircraft matches.
-- `ambiguous` — more than one matches; all candidates are shown and the operator
+- `exact`: one live aircraft matches.
+- `ambiguous`: more than one matches; all candidates are shown and the operator
   picks.
-- `none` — nothing matches, with the reason, plus a "same operator airborne now"
+- `none`: nothing matches, with the reason, plus a "same operator airborne now"
   hint when the airline was understood but that flight number is not up.
 
 Zero padding is tolerated, because the same flight files as `UAL328` one day and
@@ -174,7 +174,7 @@ Numbers are normalised the way they are spoken, not the way they are written:
 hundred` is 5,500; `twenty five hundred` is 2,500; `zero niner zero` keeps its
 leading zero and is 90. `niner`, `tree` and `fife` are understood.
 
-Implausible values are rejected with a reason rather than guessed at — an
+Implausible values are rejected with a reason rather than guessed at: an
 altitude that is not a multiple of 100, a heading above 360, a speed of 900 kt,
 and `maintain 250` with no unit, which could be either an altitude or a speed.
 
@@ -207,9 +207,11 @@ autopilot broadcasts it; otherwise ground track is corrected by 13 degrees for
 variation and the detail line says so, because track is not heading in a
 crosswind.
 
-**The board.** One row per clearance issued this session, closed ones included,
-because a monitor whose history scrolls away is not much use to the person
-reviewing it. Each row carries the spoken callsign, the resolved callsign, the
+**The board.** One strip per clearance. Amending an instruction replaces its
+strip and moves it to the top rather than stacking a second one beside it, and
+the previous instruction is kept on the new strip, struck through. The bay holds
+eight strips: closed ones retire after eight minutes, and when the rack is full
+closed strips are pulled before open ones, oldest first. Each row carries the spoken callsign, the resolved callsign, the
 tail, the current altitude and vertical rate, the clearance in plain English, a
 trend line with the assigned value drawn across it as a dashed reference, the
 verdict badge, and the evidence line underneath. PENDING rows show the response
@@ -236,7 +238,7 @@ the header shows a stale badge with its age.
 
 **Voice.** Press Talk once and speak. The recorder watches the input level and
 ends the transmission itself after about a second of silence, then transcribes
-and issues in one move — a controller has both hands busy, and the natural end
+and issues in one move. A controller has both hands busy, and the natural end
 of a transmission is silence, not a button release. The transcript lands in the
 same box you would have typed into and feeds the same parser. Voice is an input
 method, not a second code path. Round trip measured at about 770 ms.
@@ -263,7 +265,7 @@ accepted, 313 rejected, so their tokenizer splits aviation vocabulary into about
 
 `smart_format` and `numerals` are **off**, per the spec. With them on, Deepgram
 returns `"United twenty three twenty eight climb and maintain one zero
-thousand."` — capitalised and punctuated. Off, it returns the raw spoken words,
+thousand."`, capitalised and punctuated. Off, it returns the raw spoken words,
 which is what the normaliser was tested against.
 
 **What the A/B actually showed.** On clean synthetic speech, keyterms moved
@@ -285,8 +287,8 @@ The interface is a **strip bay**, not a radar scope. Controllers work paper
 flight progress strips racked in a bay: tinted by function, printed with field
 dividers, annotated by hand. One clearance is one strip.
 
-The colour lives entirely in the strip papers — white pending, buff complying,
-green complied, pink deviated, grey superseded, blue unknown — so a bay can be
+The colour lives entirely in the strip papers (white pending, buff complying,
+green complied, pink deviated, grey superseded, blue unknown), so a bay can be
 read from across a room. Everything around them is graphite and hairlines, which
 makes the strips the brightest thing on screen, which is where the eye should go.
 
@@ -294,8 +296,18 @@ When a controller amends an instruction they do not erase the old one, they
 **cross it out**. A superseded strip is struck through for the same reason, so
 it reads as amended rather than failed without anyone having to explain it.
 
-Altitudes appear in hundreds of feet on the strip and in the traffic list, the
-way a radar data block shows them, and in prose as flight levels above 18,000 ft.
+Altitudes are written in feet below 18,000 ft and as flight levels at or above
+it, which is where flight levels begin. A bare hundreds-of-feet readout is
+correct only on the scope, where every target is labelled the same way; anywhere
+else "096" reads as FL096, and there is no such flight level.
+
+**The scope** is a draggable window, opened from the Scope button in the header.
+Range rings at 10, 20, 30 and 40 nm, north up, with a leader line on each target
+showing where it will be in one minute at its current ground speed and track.
+It is drawn from lat/lon rather than fetched as map tiles: a tile layer would
+need the network, which is the thing replay mode exists to survive, and a
+controller's plan view has no satellite imagery on it anyway. Click a target to
+put its callsign in the command line. Escape closes it.
 
 Type is Archivo for chrome and IBM Plex Mono for every number and callsign, both
 self-hosted at build time so replay mode needs no network for type either.

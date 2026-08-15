@@ -1,9 +1,9 @@
 // Session state for the board. Pure reducer, so the whole thing can be driven
 // from a list of actions and nothing here depends on when it runs.
 //
-// Every clearance the operator has issued stays on the board for the session,
-// including the closed ones. A conformance monitor whose history scrolls away
-// is not much use to the person reviewing it.
+// The bay holds the clearances still worth looking at. Amending an instruction
+// replaces its strip rather than stacking a second one beside it, and closed
+// strips retire on age, the way a physical rack gets cleared as traffic moves on.
 
 import type { Aircraft, Clearance, Constraint, TrackSample } from './types.ts'
 import { evaluate, isOpen, supersede } from './conform.ts'
@@ -14,6 +14,17 @@ import { evaluate, isOpen, supersede } from './conform.ts'
  * trend line that shows the whole manoeuvre.
  */
 export const MAX_HISTORY = 240
+
+/**
+ * How many strips the bay holds.
+ *
+ * A real bay is a rack and it holds what it holds. When it is full, closed
+ * strips are pulled before open ones, oldest first.
+ */
+export const MAX_STRIPS = 8
+
+/** A closed strip is pulled from the bay once it is this old. */
+export const RETIRE_CLOSED_MS = 8 * 60 * 1000
 
 export type BoardState = {
   /** Newest first, so an amendment appears directly above what it replaced. */
@@ -58,10 +69,31 @@ function appendSample(history: TrackSample[], sample: TrackSample): TrackSample[
 export function boardReducer(state: BoardState, action: BoardAction): BoardState {
   switch (action.type) {
     case 'ISSUE': {
-      // Close anything this clearance amends before adding it, so the old one
-      // is never left open to fail a window it can no longer meet.
-      const closed = supersede(state.clearances, action.clearance)
-      return { clearances: [action.clearance, ...closed] }
+      // Close anything this clearance amends, then pull the closed strip from
+      // the bay rather than leaving a dead row behind. A controller who amends
+      // an instruction writes a new strip and removes the old one; two strips
+      // for one aircraft and one instruction is just clutter to read past.
+      const marked = supersede(state.clearances, action.clearance)
+      const replaced = marked.filter(
+        (c) => c.status === 'SUPERSEDED' && c.hex === action.clearance.hex,
+      )
+      const survivors = marked.filter((c) => !replaced.includes(c))
+
+      // Carry the replaced clearance's track forward so the trend line does not
+      // restart from nothing, and keep what it used to say.
+      const previous = replaced[replaced.length - 1]
+      const issued: Clearance = previous
+        ? {
+            ...action.clearance,
+            amendedFrom: previous.constraint,
+            history:
+              previous.history.length > action.clearance.history.length
+                ? previous.history
+                : action.clearance.history,
+          }
+        : action.clearance
+
+      return { clearances: prune([issued, ...survivors], action.clearance.issuedAt) }
     }
 
     case 'SNAPSHOT': {
@@ -78,12 +110,37 @@ export function boardReducer(state: BoardState, action: BoardAction): BoardState
         }
         return { ...c, history, status: assessment.verdict, detail: assessment.detail }
       })
-      return { clearances }
+      return { clearances: prune(clearances, action.now) }
     }
 
     case 'CLEAR':
       return initialBoardState
   }
+}
+
+/**
+ * Keep the bay to a workable size.
+ *
+ * A physical strip bay is a rack and it holds what it holds. Closed strips
+ * retire on age first, then the rack is trimmed to MAX_STRIPS: closed strips go
+ * before open ones, and within each group the oldest goes first. The cap is
+ * hard, because COMPLYING and COMPLIED are both still "open" and a bay that
+ * only ever drops closed strips is a bay that grows without limit.
+ *
+ * Display order is always newest first, whatever the drop order was.
+ */
+function prune(clearances: Clearance[], now: number): Clearance[] {
+  const fresh = clearances.filter((c) => isOpen(c.status) || now - c.issuedAt < RETIRE_CLOSED_MS)
+  if (fresh.length <= MAX_STRIPS) return [...fresh].sort((a, b) => b.issuedAt - a.issuedAt)
+
+  const ranked = [...fresh].sort((a, b) => {
+    const aOpen = isOpen(a.status) ? 0 : 1
+    const bOpen = isOpen(b.status) ? 0 : 1
+    if (aOpen !== bOpen) return aOpen - bOpen
+    return b.issuedAt - a.issuedAt
+  })
+  const kept = new Set(ranked.slice(0, MAX_STRIPS))
+  return fresh.filter((c) => kept.has(c)).sort((a, b) => b.issuedAt - a.issuedAt)
 }
 
 /** Build a clearance. The id and timestamp come from the caller to keep this pure. */
@@ -107,6 +164,7 @@ export function makeClearance(args: {
     status: 'PENDING',
     detail: 'issued, waiting for the first response',
     history: [toSample(args.aircraft)],
+    amendedFrom: null,
   }
 }
 

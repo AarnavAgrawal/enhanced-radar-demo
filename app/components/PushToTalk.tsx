@@ -211,8 +211,8 @@ export function PushToTalk({ onTranscript, disabled }: Props) {
           <span className="relative">
             {recording
               ? heard
-                ? 'Listening — stop speaking to send'
-                : 'Listening — go ahead'
+                ? 'Listening, stop speaking to send'
+                : 'Listening, go ahead'
               : busy
                 ? 'Transcribing'
                 : 'Talk'}

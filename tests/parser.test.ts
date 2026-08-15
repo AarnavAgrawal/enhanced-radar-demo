@@ -12,7 +12,7 @@ import {
   describeConstraint,
 } from '../lib/parser.ts'
 import { tokenize } from '../lib/callsign.ts'
-import { formatAltitude, formatFeet, altitudeTag } from '../lib/format.ts'
+import { formatAltitude, formatFeet, altitudeTag, formatAltitudeShort } from '../lib/format.ts'
 
 /** Convenience: parse and assert it succeeded, returning the constraint. */
 function constraintOf(text: string) {
@@ -288,34 +288,50 @@ describe('how altitudes are written back out', () => {
     assert.equal(r.ok, true)
     if (!r.ok) return
     assert.equal(r.constraint.kind === 'ALTITUDE' && r.constraint.targetFt, 35000)
-    assert.equal(describeConstraint(r.constraint), 'climb to FL350')
+    assert.equal(describeConstraint(r.constraint), 'climb and maintain FL350')
   })
 
   test('typed feet above the transition altitude are still a flight level', () => {
     const r = parseInstruction('united 328 climb and maintain 35000')
     assert.equal(r.ok, true)
     if (!r.ok) return
-    assert.equal(describeConstraint(r.constraint), 'climb to FL350')
+    assert.equal(describeConstraint(r.constraint), 'climb and maintain FL350')
   })
 
   test('below the transition altitude stays in feet', () => {
     const r = parseInstruction('united 328 descend and maintain one zero thousand')
     assert.equal(r.ok, true)
     if (!r.ok) return
-    assert.equal(describeConstraint(r.constraint), 'descend to 10,000 ft')
+    assert.equal(describeConstraint(r.constraint), 'descend and maintain 10,000 ft')
   })
 
   test('exactly 18,000 ft is FL180', () => {
     const r = parseInstruction('united 328 climb and maintain 18000')
     assert.equal(r.ok, true)
     if (!r.ok) return
-    assert.equal(describeConstraint(r.constraint), 'climb to FL180')
+    assert.equal(describeConstraint(r.constraint), 'climb and maintain FL180')
   })
 
   test('a two digit flight level keeps three digits', () => {
     assert.equal(formatAltitude(24000), 'FL240')
     assert.equal(altitudeTag(8500), '085')
     assert.equal(altitudeTag(35000), '350')
+  })
+
+  test('the short form never invents a flight level below the transition altitude', () => {
+    // There is no FL096. The lowest usable flight level in the US is FL180.
+    assert.equal(formatAltitudeShort(9600), '9,600')
+    assert.equal(formatAltitudeShort(17900), '17,900')
+    assert.equal(formatAltitudeShort(18000), 'FL180')
+    assert.equal(formatAltitudeShort(35000), 'FL350')
+  })
+
+  test('phraseology, not paraphrase', () => {
+    assert.equal(
+      describeConstraint({ kind: 'HEADING', targetDegMag: 90, turn: 'left' }),
+      'turn left heading 090',
+    )
+    assert.equal(describeConstraint({ kind: 'SPEED', targetKt: 250 }), 'maintain 250 knots')
   })
 
   test('a vertical distance is never a flight level', () => {

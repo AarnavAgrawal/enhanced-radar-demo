@@ -303,19 +303,22 @@ export function parseInstruction(text: string): ParsedInstruction {
 export function describeConstraint(c: Constraint): string {
   switch (c.kind) {
     case 'ALTITUDE': {
-      // FL350 above the transition altitude, 10,000 ft below it.
+      // FL350 at or above the transition altitude, 10,000 ft below it.
       const a = formatAltitude(c.targetFt)
-      if (c.direction === 'up') return `climb to ${a}`
-      if (c.direction === 'down') return `descend to ${a}`
+      // "climb and maintain" is the phraseology, not "climb to". The maintain
+      // half is the part that keeps applying after the aircraft gets there.
+      if (c.direction === 'up') return `climb and maintain ${a}`
+      if (c.direction === 'down') return `descend and maintain ${a}`
       return `maintain ${a}`
     }
     case 'HEADING': {
+      // "turn left heading 270", not "turn left to heading 270".
       const h = formatHeading(c.targetDegMag)
-      if (c.turn === 'left') return `turn left to heading ${h}° magnetic`
-      if (c.turn === 'right') return `turn right to heading ${h}° magnetic`
-      return `fly heading ${h}° magnetic`
+      if (c.turn === 'left') return `turn left heading ${h}`
+      if (c.turn === 'right') return `turn right heading ${h}`
+      return `fly heading ${h}`
     }
     case 'SPEED':
-      return `maintain ${c.targetKt} kt`
+      return `maintain ${c.targetKt} knots`
   }
 }
