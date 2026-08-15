@@ -1,26 +1,112 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/*
+  A strip bay, not a radar scope.
+  Controllers work paper flight progress strips racked in a bay: tinted by
+  function, printed with field dividers, annotated by hand. The colour lives in
+  the strips. Everything around them is graphite and hairlines so the strips are
+  the brightest thing on screen, which is where the eye should go.
+*/
+@theme {
+  --color-bay: #0e1216;
+  --color-bay-raised: #161b21;
+  --color-bay-sunk: #0a0d10;
+  --color-rule: #232a32;
+  --color-rule-bright: #333d48;
+  --color-ink: #e6eaee;
+  --color-ink-dim: #808c99;
+  --color-ink-faint: #55606b;
+
+  /* Strip papers. Real strips are tinted by function; here the tint is the
+     verdict, so a bay can be read from across a room. */
+  --color-strip-pending: #f0f1f3;
+  --color-strip-complying: #f6e3b8;
+  --color-strip-complied: #d9e9cf;
+  --color-strip-deviated: #f4d2ce;
+  --color-strip-superseded: #c9ced4;
+  --color-strip-unknown: #d3e1ea;
+  --color-strip-ink: #15181c;
+  --color-strip-ink-dim: #5c646d;
+
+  /* Holder edges: the saturated version of each paper, for the left rail. */
+  --color-holder-pending: #98a2ad;
+  --color-holder-complying: #d99a22;
+  --color-holder-complied: #4e9e5f;
+  --color-holder-deviated: #c8503f;
+  --color-holder-superseded: #6b7480;
+  --color-holder-unknown: #5b87a3;
+
+  --color-signal-live: #4e9e5f;
+  --color-signal-stale: #d99a22;
+  --color-signal-fault: #c8503f;
+
+  --font-display: var(--font-archivo), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-plex-mono), ui-monospace, monospace;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+html {
+  background: var(--color-bay);
+  color-scheme: dark;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background: var(--color-bay);
+  color: var(--color-ink);
+  font-family: var(--font-display);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Equipment labelling: small, uppercase, widely tracked. Used for field names
+   on strips and for section headers, never for prose. */
+.label {
+  font-family: var(--font-display);
+  font-size: 0.625rem;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-ink-faint);
+  line-height: 1;
+}
+
+.label-on-paper {
+  color: var(--color-strip-ink-dim);
+}
+
+/* Tabular figures everywhere numbers change in place, so digits do not jitter. */
+.tnum {
+  font-variant-numeric: tabular-nums;
+}
+
+/* The strike a controller draws through an amended clearance. Drawn rather than
+   applied as line-through so it reads as a pen stroke across the whole field,
+   which is what it is. */
+.struck {
+  position: relative;
+}
+.struck::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to bottom right,
+    transparent calc(50% - 0.6px),
+    var(--color-strip-ink-dim) calc(50% - 0.6px),
+    var(--color-strip-ink-dim) calc(50% + 0.6px),
+    transparent calc(50% + 0.6px)
+  );
+  pointer-events: none;
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-ink);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
 }

@@ -8,6 +8,7 @@
 // an aircraft flies and nothing about React should be able to follow it.
 
 import type { Assessment, Clearance, TrackSample, Verdict } from './types.ts'
+import { formatAltitude, formatFeet, formatHeading } from './format.ts'
 
 /**
  * Every threshold in one place, so they are visible and tunable. See CLAUDE.md
@@ -89,10 +90,17 @@ export function angularDifference(from: number, to: number): number {
   return d === -180 ? 180 : d
 }
 
-/** Feet, with a thousands separator, the way it is spoken and written. */
-function ft(n: number): string {
-  return `${Math.round(n).toLocaleString('en-US')} ft`
-}
+/**
+ * An altitude, written the way the system writes it: FL350 above the transition
+ * altitude, 10,000 ft below it.
+ */
+const alt = formatAltitude
+
+/**
+ * A vertical DISTANCE, which is never a flight level. "3,000 ft to run" is a gap
+ * between two altitudes, and FL030 would be nonsense.
+ */
+const gap = formatFeet
 
 /** Vertical rate as a signed rate, or "level". */
 function rate(vs: number): string {
@@ -101,9 +109,7 @@ function rate(vs: number): string {
 }
 
 /** Three digit heading, the way it is written on a strip: 090, not 90. */
-function hdg(deg: number): string {
-  return String(Math.round(normaliseHeading(deg))).padStart(3, '0')
-}
+const hdg = formatHeading
 
 /**
  * Which heading to judge against, and how much to trust it.
@@ -194,13 +200,13 @@ function evaluateAltitude(
   elapsedSec: number,
   established: boolean,
 ): Assessment {
-  const alt = latest.altFt
-  if (alt === null) {
+  const altFt = latest.altFt
+  if (altFt === null) {
     return { verdict: 'UNKNOWN', detail: 'no altitude reported, aircraft may be on the surface' }
   }
   const vs = latest.vsFpm ?? 0
   const assigned = c.targetFt
-  const errorFt = assigned - alt // positive means the aircraft is below the assigned altitude
+  const errorFt = assigned - altFt // positive means the aircraft is below the assigned altitude
   const insideBand = Math.abs(errorFt) <= TOL.altLevelBandFt
   const isLevel = Math.abs(vs) < TOL.vsLevelFpm
 
@@ -213,15 +219,15 @@ function evaluateAltitude(
     if (Math.abs(errorFt) > TOL.altBustFt) {
       return {
         verdict: 'DEVIATED',
-        detail: `assigned to maintain ${ft(assigned)}, aircraft has left it and is at ${ft(alt)}, ${rate(vs)}`,
+        detail: `assigned to maintain ${alt(assigned)}, aircraft has left it and is at ${alt(altFt)}, ${rate(vs)}`,
       }
     }
     if (insideBand && isLevel) {
-      return { verdict: 'COMPLIED', detail: `holding ${ft(alt)}, assigned ${ft(assigned)}` }
+      return { verdict: 'COMPLIED', detail: `holding ${alt(altFt)}, assigned ${alt(assigned)}` }
     }
     return {
       verdict: 'COMPLYING',
-      detail: `assigned to maintain ${ft(assigned)}, currently ${ft(alt)} and ${rate(vs)}`,
+      detail: `assigned to maintain ${alt(assigned)}, currently ${alt(altFt)} and ${rate(vs)}`,
     }
   }
 
@@ -231,11 +237,11 @@ function evaluateAltitude(
   // Busted through. Checked before anything else, because an aircraft that has
   // gone past its assigned altitude and is still going is the single event
   // most worth surfacing, whatever the response window says.
-  const overshootFt = commandedSign * (alt - assigned)
+  const overshootFt = commandedSign * (altFt - assigned)
   if (overshootFt > TOL.altBustFt) {
     return {
       verdict: 'DEVIATED',
-      detail: `assigned ${verb} to ${ft(assigned)}, aircraft passed through it and is at ${ft(alt)}, ${rate(vs)}`,
+      detail: `assigned ${verb} to ${alt(assigned)}, aircraft passed through it and is at ${alt(altFt)}, ${rate(vs)}`,
     }
   }
 
@@ -244,7 +250,7 @@ function evaluateAltitude(
   if (insideBand && isLevel) {
     return {
       verdict: 'COMPLIED',
-      detail: `level ${ft(alt)}, assigned ${ft(assigned)}, inside the ${TOL.altLevelBandFt} ft band`,
+      detail: `level ${alt(altFt)}, assigned ${alt(assigned)}, inside the ${TOL.altLevelBandFt} ft band`,
     }
   }
 
@@ -257,14 +263,14 @@ function evaluateAltitude(
   if (respondingWrongWay) {
     return {
       verdict: 'DEVIATED',
-      detail: `assigned ${verb} to ${ft(assigned)}, aircraft is ${rate(vs)} at ${ft(alt)}`,
+      detail: `assigned ${verb} to ${alt(assigned)}, aircraft is ${rate(vs)} at ${alt(altFt)}`,
     }
   }
 
   if (respondingCorrectly) {
     return {
       verdict: 'COMPLYING',
-      detail: `${rate(vs)} through ${ft(alt)}, ${ft(Math.abs(errorFt))} to run to the assigned ${ft(assigned)}`,
+      detail: `${rate(vs)} through ${alt(altFt)}, ${gap(Math.abs(errorFt))} to run to the assigned ${alt(assigned)}`,
     }
   }
 
@@ -273,7 +279,7 @@ function evaluateAltitude(
   if (elapsedSec <= TOL.responseWindowSec) {
     return {
       verdict: 'PENDING',
-      detail: `assigned ${verb} to ${ft(assigned)}, no vertical response yet at ${ft(alt)}, ${remaining(elapsedSec)} s of the ${TOL.responseWindowSec} s window remaining`,
+      detail: `assigned ${verb} to ${alt(assigned)}, no vertical response yet at ${alt(altFt)}, ${remaining(elapsedSec)} s of the ${TOL.responseWindowSec} s window remaining`,
     }
   }
 
@@ -283,12 +289,12 @@ function evaluateAltitude(
   if (startedButStopped) {
     return {
       verdict: 'DEVIATED',
-      detail: `assigned ${verb} to ${ft(assigned)}, aircraft is level at ${ft(alt)}, ${ft(Math.abs(errorFt))} short after ${Math.round(elapsedSec)} s`,
+      detail: `assigned ${verb} to ${alt(assigned)}, aircraft is level at ${alt(altFt)}, ${gap(Math.abs(errorFt))} short after ${Math.round(elapsedSec)} s`,
     }
   }
   return {
     verdict: 'DEVIATED',
-    detail: `assigned ${verb} to ${ft(assigned)}, no vertical response within ${TOL.responseWindowSec} s, still ${rate(vs)} at ${ft(alt)}`,
+    detail: `assigned ${verb} to ${alt(assigned)}, no vertical response within ${TOL.responseWindowSec} s, still ${rate(vs)} at ${alt(altFt)}`,
   }
 }
 

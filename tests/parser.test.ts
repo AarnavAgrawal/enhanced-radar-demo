@@ -5,8 +5,14 @@
 
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { parseAviationNumber, parseInstruction, findInstructionStart } from '../lib/parser.ts'
+import {
+  parseAviationNumber,
+  parseInstruction,
+  findInstructionStart,
+  describeConstraint,
+} from '../lib/parser.ts'
 import { tokenize } from '../lib/callsign.ts'
+import { formatAltitude, formatFeet, altitudeTag } from '../lib/format.ts'
 
 /** Convenience: parse and assert it succeeded, returning the constraint. */
 function constraintOf(text: string) {
@@ -269,6 +275,59 @@ describe('separating the callsign from the instruction', () => {
       targetFt: 10000,
       direction: 'up',
     })
+  })
+})
+
+describe('how altitudes are written back out', () => {
+  // Below 18,000 ft an aircraft flies an altitude in feet. At and above it,
+  // everyone sets 29.92 and flies a flight level. Same measurement, different
+  // reference, different notation -- and a pilot reads "35,000 ft" as a tell
+  // that whoever wrote it does not work in the system.
+  test('a flight level comes back as a flight level', () => {
+    const r = parseInstruction('united 328 climb and maintain flight level 350')
+    assert.equal(r.ok, true)
+    if (!r.ok) return
+    assert.equal(r.constraint.kind === 'ALTITUDE' && r.constraint.targetFt, 35000)
+    assert.equal(describeConstraint(r.constraint), 'climb to FL350')
+  })
+
+  test('typed feet above the transition altitude are still a flight level', () => {
+    const r = parseInstruction('united 328 climb and maintain 35000')
+    assert.equal(r.ok, true)
+    if (!r.ok) return
+    assert.equal(describeConstraint(r.constraint), 'climb to FL350')
+  })
+
+  test('below the transition altitude stays in feet', () => {
+    const r = parseInstruction('united 328 descend and maintain one zero thousand')
+    assert.equal(r.ok, true)
+    if (!r.ok) return
+    assert.equal(describeConstraint(r.constraint), 'descend to 10,000 ft')
+  })
+
+  test('exactly 18,000 ft is FL180', () => {
+    const r = parseInstruction('united 328 climb and maintain 18000')
+    assert.equal(r.ok, true)
+    if (!r.ok) return
+    assert.equal(describeConstraint(r.constraint), 'climb to FL180')
+  })
+
+  test('a two digit flight level keeps three digits', () => {
+    assert.equal(formatAltitude(24000), 'FL240')
+    assert.equal(altitudeTag(8500), '085')
+    assert.equal(altitudeTag(35000), '350')
+  })
+
+  test('a vertical distance is never a flight level', () => {
+    // "3,000 ft to run" is a gap between altitudes. FL030 would be nonsense.
+    assert.equal(formatFeet(35000), '35,000 ft')
+  })
+
+  test('headings keep their leading zero', () => {
+    const r = parseInstruction('united 328 fly heading 090')
+    assert.equal(r.ok, true)
+    if (!r.ok) return
+    assert.match(describeConstraint(r.constraint), /090/)
   })
 })
 

@@ -1,8 +1,6 @@
 'use client'
 
-// Phases 1 to 7a. Live traffic near SFO, callsign resolution, clearance parsing,
-// the conformance engine, the board, ?replay=1 for when the wifi is not there,
-// and push to talk feeding the same parser the text box uses.
+// The position: a command line, a strip bay, and the traffic it is watching.
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import type { Aircraft, ReplayPosition, TrafficResponse } from '@/lib/types'
@@ -10,61 +8,41 @@ import { resolveCallsign, suggestSameAirline } from '@/lib/callsign'
 import { parseInstruction, describeConstraint } from '@/lib/parser'
 import { TOL } from '@/lib/conform'
 import { boardReducer, initialBoardState, makeClearance } from '@/lib/board'
-import { ClearanceBoard } from './components/ClearanceBoard'
+import { altitudeTag, formatAltitude, formatHeading, formatVerticalRate } from '@/lib/format'
+import { StripBay } from './components/ClearanceStrip'
 import { PushToTalk } from './components/PushToTalk'
 
 const POLL_MS = 2000
 
 /**
- * Prefilled examples, so nobody is typing a clearance while also talking. Each
- * one exercises a different grammar form; the callsign is filled in from the
- * live picture at click time, because a hardcoded flight number will not be
- * airborne tomorrow.
+ * Worked examples, so nobody is typing a clearance while also talking. The
+ * callsign is filled from the live picture at click time rather than hardcoded,
+ * because a flight number airborne tonight will not be airborne tomorrow, and
+ * each one picks an aircraft in a state that makes the example land as labelled.
  */
 const PRESETS: { label: string; instruction: string; pick: (a: Aircraft) => boolean }[] = [
   {
-    label: 'climb (should comply)',
+    label: 'climb · complies',
     instruction: 'climb and maintain',
     pick: (a) => (a.vsFpm ?? 0) > 800 && (a.altFt ?? 0) > 3000,
   },
   {
-    label: 'descend (should deviate)',
+    label: 'descend · deviates',
     instruction: 'descend and maintain',
     pick: (a) => (a.vsFpm ?? 0) > 800 && (a.altFt ?? 0) > 8000,
   },
   {
-    label: 'maintain (should comply)',
+    label: 'maintain · complies',
     instruction: 'maintain',
     pick: (a) => Math.abs(a.vsFpm ?? 999) < 200 && (a.altFt ?? 0) > 5000,
   },
 ]
 
-/** Round to a whole thousand, which is how altitudes are assigned. */
 const toThousand = (ft: number) => Math.max(1000, Math.round(ft / 1000) * 1000)
-/** Beyond this many seconds since the last position, a track is not trustworthy. */
-const STALE_SEC = 15
-
-function fmtAlt(a: Aircraft): string {
-  if (a.onGround) return 'ground'
-  return a.altFt === null ? '--' : a.altFt.toLocaleString('en-US')
-}
-
-function fmtVs(vs: number | null): string {
-  if (vs === null) return '--'
-  const r = Math.round(vs / 10) * 10
-  if (Math.abs(r) < 100) return 'level'
-  return `${r > 0 ? '+' : ''}${r.toLocaleString('en-US')}`
-}
-
-function vsClass(vs: number | null): string {
-  if (vs === null || Math.abs(vs) < 100) return 'text-slate-400'
-  return vs > 0 ? 'text-emerald-400' : 'text-sky-400'
-}
 
 export default function Page() {
   const [traffic, setTraffic] = useState<Aircraft[]>([])
   const [fetchedAt, setFetchedAt] = useState<number | null>(null)
-  const [source, setSource] = useState<string>('--')
   const [error, setError] = useState<string | null>(null)
   const [now, setNow] = useState(() => Date.now())
   const [query, setQuery] = useState('')
@@ -79,11 +57,8 @@ export default function Page() {
     if (typeof window === 'undefined') return false
     return new URLSearchParams(window.location.search).get('replay') === '1'
   }, [])
-  /** When this browser started playback, so the server can stay stateless. */
   const replayStartedAt = useRef<number | null>(null)
 
-  // Poll the proxy. A failed poll keeps the previous picture on screen and
-  // raises the stale badge instead of blanking the board.
   const poll = useCallback(async () => {
     try {
       let url = '/api/traffic'
@@ -94,16 +69,12 @@ export default function Page() {
       const res = await fetch(url, { cache: 'no-store' })
       const body: TrafficResponse = await res.json()
       if (body.ok) {
-        // Stamp arrival with THIS browser's clock. The engine decides staleness
-        // from `now - ts`, and `now` is this browser's clock too, so both sides
-        // of that subtraction have to come from the same place. Trusting the
-        // server's stamp instead would mean a phone whose clock runs a few
-        // minutes fast marks every aircraft UNKNOWN, and the demo would fail
-        // only on the device it is being demonstrated from.
+        // Stamp arrival with THIS browser's clock. Staleness is judged from
+        // `now - ts` and `now` is this browser's clock, so both sides of that
+        // subtraction have to come from the same place.
         const receivedAt = Date.now()
         setTraffic(body.aircraft.map((a) => ({ ...a, ts: receivedAt })))
         setFetchedAt(body.fetchedAt)
-        setSource(body.source)
         setReplay(body.replay ?? null)
         setError(null)
       } else {
@@ -120,7 +91,6 @@ export default function Page() {
     return () => clearInterval(id)
   }, [poll])
 
-  // Ticker, so the response countdown and the feed age move between polls.
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 500)
     return () => clearInterval(id)
@@ -132,8 +102,6 @@ export default function Page() {
     dispatch({ type: 'SNAPSHOT', byHex: new Map(traffic.map((a) => [a.hex, a])), now: Date.now() })
   }, [traffic])
 
-  // Live preview of what would be issued, so a bad callsign or an unparseable
-  // instruction shows before enter is pressed rather than after.
   const typed = query.trim()
   const resolution = useMemo(
     () => (typed ? resolveCallsign(typed, traffic) : null),
@@ -172,16 +140,42 @@ export default function Page() {
   )
 
   /**
-   * Fill the box from a preset, choosing a live aircraft that is currently in a
-   * state that makes the example land the way the label says it will.
+   * Try to issue whatever is in the box. Used by the button, by Enter, and by
+   * voice once the speaker stops.
+   *
+   * Voice never forces a guess: an ambiguous callsign still stops and asks,
+   * exactly as typing one does.
    */
+  const submit = useCallback(
+    (text: string) => {
+      const t = text.trim()
+      if (!t) return
+      const r = resolveCallsign(t, traffic)
+      const p = parseInstruction(t)
+      if (!p.ok) {
+        setIssueError(p.reason)
+        return
+      }
+      if (r.outcome === 'exact') {
+        issue(t, r.aircraft)
+        return
+      }
+      setIssueError(
+        r.outcome === 'ambiguous'
+          ? 'More than one aircraft matches. Pick one below.'
+          : `No aircraft matched. ${r.reason}`,
+      )
+    },
+    [traffic, issue],
+  )
+
   const applyPreset = useCallback(
     (preset: (typeof PRESETS)[number]) => {
       const candidates = traffic.filter(
         (a) => a.callsign && !a.onGround && a.seenPosSec < 5 && preset.pick(a),
       )
       if (candidates.length === 0) {
-        setIssueError(`no aircraft is currently in the right state for "${preset.label}"`)
+        setIssueError(`Nothing is currently doing that. Try another example.`)
         return
       }
       const a = candidates[0]
@@ -198,25 +192,6 @@ export default function Page() {
     },
     [traffic],
   )
-
-  const submit = useCallback(() => {
-    if (!typed) return
-    const r = resolveCallsign(typed, traffic)
-    const p = parseInstruction(typed)
-    if (!p.ok) {
-      setIssueError(p.reason)
-      return
-    }
-    if (r.outcome === 'exact') {
-      issue(typed, r.aircraft)
-      return
-    }
-    setIssueError(
-      r.outcome === 'ambiguous'
-        ? 'more than one aircraft matches, pick one below'
-        : `could not resolve an aircraft: ${r.reason}`,
-    )
-  }, [typed, traffic, issue])
 
   const rows = useMemo(() => {
     const f = filter.trim().toUpperCase()
@@ -235,65 +210,65 @@ export default function Page() {
   const watched = useMemo(() => new Set(board.clearances.map((c) => c.hex)), [board.clearances])
   const ageSec = fetchedAt === null ? null : Math.max(0, Math.round((now - fetchedAt) / 1000))
   const feedStale = ageSec !== null && ageSec > 10
+  const status = error ? 'fault' : feedStale ? 'stale' : 'live'
 
   return (
-    <main className="mx-auto max-w-[1500px] px-6 py-6">
-      <header className="border-b border-slate-800 pb-4">
-        <div className="flex flex-wrap items-baseline justify-between gap-3">
-          <h1 className="text-xl font-semibold tracking-tight text-slate-100">
+    <main className="mx-auto max-w-[1440px] px-6 pb-20">
+      {/* Nameplate. Equipment is labelled, not branded. */}
+      <header className="flex flex-wrap items-end justify-between gap-4 border-b border-rule py-5">
+        <div>
+          <h1 className="text-[15px] font-bold tracking-[0.16em] uppercase text-ink">
             Clearance Conformance Monitor
-            <span className="ml-3 font-mono text-sm font-normal text-slate-500">SFO · 40 nm</span>
           </h1>
-          <div className="flex items-center gap-3 font-mono text-xs">
-            {isReplay && (
-              <span className="rounded bg-violet-950 px-2 py-1 font-semibold text-violet-300">
-                REPLAY{replay ? ` ${replay.frame + 1}/${replay.frames}` : ''}
-              </span>
-            )}
-            <span className="text-slate-500">{source}</span>
-            <span
-              className={
-                error || feedStale
-                  ? 'rounded bg-amber-950 px-2 py-1 text-amber-400'
-                  : 'rounded bg-emerald-950 px-2 py-1 text-emerald-400'
-              }
-            >
-              {error
-                ? 'FEED ERROR · HOLDING LAST'
-                : feedStale
-                  ? `STALE ${ageSec}s`
-                  : `LIVE ${ageSec ?? '--'}s`}
-            </span>
-            <span className="text-slate-500">{traffic.length} contacts</span>
-          </div>
+          <p className="mt-1.5 font-mono text-xs text-ink-faint">
+            KSFO · 40 nm · headings magnetic, var {TOL.magVarDeg}°E
+          </p>
         </div>
-        {/* Section 1 of CLAUDE.md: this disclosure goes first, not buried. */}
-        <p className="mt-3 text-sm text-amber-300/90">
-          Clearances typed here are synthetic. No aircraft ever receives them. The aircraft, the
-          ADS-B tracks and the conformance logic are real; the instruction is not transmitted.
-          Compliance means the aircraft happened to already be doing that. The output is a
-          candidate for review, not a finding.
+
+        <div className="flex items-center gap-5 font-mono text-xs tnum">
           {isReplay && (
-            <span className="ml-1 text-violet-300">
-              Replay mode: these are recorded tracks
-              {replay ? ` from ${new Date(replay.recordedAt).toLocaleString()}` : ''}, not live
-              traffic.
+            <span className="border border-holder-unknown px-2 py-1 text-holder-unknown uppercase tracking-wider">
+              Replay {replay ? `${replay.frame + 1}/${replay.frames}` : ''}
             </span>
           )}
-        </p>
-        {error && (
-          <p className="mt-2 font-mono text-xs text-amber-500/80">
-            last fetch failed: {error} — showing last known picture
-          </p>
-        )}
+          <span className="flex items-center gap-2 text-ink-dim">
+            <span
+              className={
+                'inline-block h-1.5 w-1.5 rounded-full ' +
+                (status === 'live'
+                  ? 'bg-signal-live'
+                  : status === 'stale'
+                    ? 'bg-signal-stale'
+                    : 'bg-signal-fault')
+              }
+              aria-hidden
+            />
+            {status === 'fault' ? 'holding last' : status === 'stale' ? `stale ${ageSec}s` : `live ${ageSec ?? '—'}s`}
+          </span>
+          <span className="text-ink-faint">{traffic.length} contacts</span>
+        </div>
       </header>
 
-      {/* ---- issue a clearance ---- */}
-      <section className="mt-6">
+      {/* The disclosure that has to come first. */}
+      <p className="border-b border-rule py-3 text-xs leading-relaxed text-ink-dim">
+        <span className="label mr-2 text-signal-stale">Synthetic</span>
+        Clearances issued here are never transmitted and no aircraft receives them. The aircraft,
+        the ADS-B tracks and the conformance logic are real. Compliance means the aircraft happened
+        to already be doing it. Output is a candidate for review, not a finding.
+        {isReplay && replay && (
+          <span className="ml-1 text-holder-unknown">
+            Replay: recorded tracks from {new Date(replay.recordedAt).toLocaleString()}, not live
+            traffic.
+          </span>
+        )}
+      </p>
+
+      {/* Command line. */}
+      <section className="py-6">
         <form
           onSubmit={(e) => {
             e.preventDefault()
-            submit()
+            submit(query)
           }}
           className="flex flex-wrap gap-2"
         >
@@ -304,209 +279,183 @@ export default function Page() {
               setQuery(e.target.value)
               setIssueError(null)
             }}
-            placeholder="united 328 climb and maintain one zero thousand"
-            className="min-w-[320px] flex-1 rounded border border-slate-700 bg-slate-900 px-3 py-2 font-mono text-sm text-slate-100 outline-none placeholder:text-slate-600 focus:border-sky-600"
+            placeholder="united 328 climb and maintain flight level 350"
+            aria-label="Clearance"
+            className="min-w-[300px] flex-1 border border-rule-bright bg-bay-sunk px-3 py-2.5 font-mono text-sm text-ink placeholder:text-ink-faint focus:border-ink-dim focus:outline-none"
           />
           <button
             type="submit"
-            className="rounded bg-sky-700 px-4 py-2 text-sm font-medium text-white hover:bg-sky-600"
+            className="border border-ink-dim bg-ink px-6 py-2.5 font-mono text-xs tracking-wide uppercase text-bay hover:bg-white"
           >
             Issue
           </button>
         </form>
 
-        {/* Voice is a bonus. The text box above is the primary path, because a
-            loud hall beats browser speech recognition every time. */}
-        <PushToTalk
-          onTranscript={(text) => {
-            setQuery(text)
-            setIssueError(null)
-            inputRef.current?.focus()
-          }}
-        />
-
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <span className="font-mono text-xs text-slate-600">presets:</span>
-          {PRESETS.map((p) => (
-            <button
-              key={p.label}
-              type="button"
-              onClick={() => applyPreset(p)}
-              className="rounded border border-slate-700 px-2 py-1 font-mono text-xs text-slate-400 hover:border-slate-500 hover:text-slate-200"
-            >
-              {p.label}
-            </button>
-          ))}
+        <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-3">
+          <PushToTalk
+            onTranscript={(text, autoIssue) => {
+              setQuery(text)
+              setIssueError(null)
+              if (autoIssue) submit(text)
+            }}
+          />
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="label">examples</span>
+            {PRESETS.map((p) => (
+              <button
+                key={p.label}
+                type="button"
+                onClick={() => applyPreset(p)}
+                className="border border-rule px-2.5 py-1 font-mono text-[11px] text-ink-faint hover:border-ink-faint hover:text-ink-dim"
+              >
+                {p.label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* What would be issued, updated as it is typed. */}
+        {/* What would be issued, as it is typed. */}
         {typed && (
-          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 rounded border border-slate-800 bg-slate-900/50 px-4 py-3 font-mono text-xs">
-            <span
-              className={
-                'rounded px-2 py-1 font-semibold ' +
-                (resolution?.outcome === 'exact'
-                  ? 'bg-emerald-950 text-emerald-400'
-                  : resolution?.outcome === 'ambiguous'
-                    ? 'bg-amber-950 text-amber-400'
-                    : 'bg-slate-800 text-slate-400')
-              }
-            >
-              {resolution?.outcome.toUpperCase() ?? 'NONE'}
+          <div className="mt-4 flex flex-wrap items-center gap-x-6 gap-y-2 border-l-2 border-rule-bright bg-bay-raised px-4 py-3 font-mono text-xs">
+            <span className="flex items-center gap-2">
+              <span className="label">aircraft</span>
+              {resolution?.outcome === 'exact' ? (
+                <span className="text-ink">
+                  {resolution.resolvedCallsign} · {resolution.aircraft.registration ?? '—'} ·{' '}
+                  {resolution.aircraft.type ?? '—'} ·{' '}
+                  {resolution.aircraft.altFt != null
+                    ? formatAltitude(resolution.aircraft.altFt)
+                    : 'ground'}
+                </span>
+              ) : (
+                <span className="text-ink-faint">
+                  {resolution?.outcome === 'ambiguous'
+                    ? `${resolution.candidates.length} candidates — pick one`
+                    : (resolution?.reason ?? 'no callsign yet')}
+                </span>
+              )}
             </span>
-            {resolution?.outcome === 'exact' ? (
-              <span className="text-slate-300">
-                {resolution.resolvedCallsign} · {resolution.aircraft.hex} ·{' '}
-                {resolution.aircraft.registration ?? '--'} · {resolution.aircraft.type ?? '--'} ·{' '}
-                {fmtAlt(resolution.aircraft)} ft
+            <span className="flex items-center gap-2">
+              <span className="label">clearance</span>
+              <span className={parsed?.ok ? 'text-ink' : 'text-ink-faint'}>
+                {parsed?.ok ? describeConstraint(parsed.constraint) : (parsed?.reason ?? '—')}
               </span>
-            ) : (
-              <span className="text-slate-500">
-                {resolution?.outcome === 'ambiguous'
-                  ? `${resolution.candidates.length} candidates`
-                  : (resolution?.reason ?? '')}
-              </span>
-            )}
-            <span className="text-slate-700">|</span>
-            <span
-              className={
-                'rounded px-2 py-1 font-semibold ' +
-                (parsed?.ok ? 'bg-emerald-950 text-emerald-400' : 'bg-slate-800 text-slate-400')
-              }
-            >
-              {parsed?.ok ? 'PARSED' : 'NOT PARSED'}
-            </span>
-            <span className="text-slate-300">
-              {parsed?.ok ? describeConstraint(parsed.constraint) : (parsed?.reason ?? '')}
             </span>
           </div>
         )}
 
-        {issueError && <p className="mt-2 text-sm text-amber-400">{issueError}</p>}
+        {issueError && <p className="mt-2 text-xs text-signal-stale">{issueError}</p>}
 
-        {/* Ambiguity is resolved by the operator, never by the app. */}
+        {/* Ambiguity is resolved by the operator, never by the app — including
+            when the clearance arrived by voice. */}
         {resolution?.outcome === 'ambiguous' && (
-          <div className="mt-2 space-y-1">
+          <div className="mt-2 flex flex-col gap-px bg-rule">
             {resolution.candidates.map((c) => (
               <button
                 key={c.hex}
                 onClick={() => issue(typed, c)}
-                className="block w-full rounded border border-amber-900/60 bg-amber-950/20 px-3 py-2 text-left font-mono text-sm text-amber-200 hover:bg-amber-950/50"
+                className="bg-bay-raised px-4 py-2.5 text-left font-mono text-xs text-ink hover:bg-rule"
               >
-                {c.callsign} · {c.hex} · {c.registration ?? '--'} · {c.type ?? '--'} · {fmtAlt(c)} ft
+                {c.callsign} · {c.hex} · {c.registration ?? '—'} · {c.type ?? '—'} ·{' '}
+                {c.altFt != null ? formatAltitude(c.altFt) : 'ground'}
               </button>
             ))}
           </div>
         )}
 
         {suggestions.length > 0 && (
-          <p className="mt-2 font-mono text-xs text-slate-500">
-            same operator airborne now: {suggestions.map((a) => a.callsign).join(' · ')}
+          <p className="mt-2 font-mono text-xs text-ink-faint">
+            same operator airborne now: {suggestions.map((a) => a.callsign).join('  ')}
           </p>
         )}
       </section>
 
-      {/* ---- the board ---- */}
-      <section className="mt-8">
-        <div className="mb-2 flex items-baseline justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
-            Clearances this session
-          </h2>
-          <span className="font-mono text-xs text-slate-600">
-            {board.clearances.length} issued · response window {TOL.responseWindowSec}s · level band{' '}
-            {TOL.altLevelBandFt} ft · heading tolerance {TOL.hdgToleranceDeg}°
+      {/* The bay. */}
+      <section>
+        <div className="mb-3 flex items-baseline justify-between border-b border-rule pb-2">
+          <h2 className="label text-ink-dim">Strip bay</h2>
+          <span className="font-mono text-[11px] text-ink-faint tnum">
+            {board.clearances.length} strips · response window {TOL.responseWindowSec}s · level band{' '}
+            ±{TOL.altLevelBandFt} ft · heading ±{TOL.hdgToleranceDeg}°
           </span>
         </div>
-        <ClearanceBoard clearances={board.clearances} now={now} />
+        <StripBay clearances={board.clearances} now={now} />
       </section>
 
-      {/* ---- live traffic ---- */}
-      <section className="mt-8">
-        <div className="mb-2 flex items-baseline justify-between">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-slate-400">
-            Live traffic
-          </h2>
+      {/* The traffic being watched. Quiet by design: the strips are the subject. */}
+      <section className="mt-12">
+        <div className="mb-3 flex items-baseline justify-between border-b border-rule pb-2">
+          <h2 className="label text-ink-dim">Traffic</h2>
           <input
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
             placeholder="filter"
-            className="w-40 rounded border border-slate-800 bg-slate-900 px-2 py-1 font-mono text-xs text-slate-300 outline-none placeholder:text-slate-600 focus:border-slate-600"
+            aria-label="Filter traffic"
+            className="w-36 border border-rule bg-bay-sunk px-2 py-1 font-mono text-[11px] text-ink-dim placeholder:text-ink-faint focus:border-rule-bright focus:outline-none"
           />
         </div>
-        <div className="max-h-[420px] overflow-auto rounded border border-slate-800">
-          <table className="w-full border-collapse font-mono text-sm">
-            <thead className="sticky top-0">
-              <tr className="bg-slate-900 text-left text-xs uppercase tracking-wider text-slate-500">
+
+        <div className="max-h-[380px] overflow-auto">
+          <table className="w-full border-collapse font-mono text-xs tnum">
+            <thead className="sticky top-0 bg-bay">
+              <tr className="border-b border-rule text-left">
                 <Th>callsign</Th>
-                <Th>hex</Th>
                 <Th>tail</Th>
                 <Th>type</Th>
-                <Th right>alt ft</Th>
-                <Th right>vs fpm</Th>
-                <Th right>gs kt</Th>
-                <Th right>trk °T</Th>
-                <Th right>nav hdg</Th>
-                <Th right>age s</Th>
+                <Th right>alt</Th>
+                <Th right>vs</Th>
+                <Th right>gs</Th>
+                <Th right>trk°T</Th>
+                <Th right>hdg</Th>
+                <Th right>age</Th>
               </tr>
             </thead>
             <tbody>
               {rows.map((a) => {
-                const stale = a.seenPosSec > STALE_SEC
+                const stale = a.seenPosSec > TOL.staleTrackSec
+                const onStrip = watched.has(a.hex)
                 return (
                   <tr
                     key={a.hex}
                     className={
-                      'border-t border-slate-900 ' +
-                      (watched.has(a.hex)
-                        ? 'bg-sky-950/50'
-                        : stale
-                          ? 'text-slate-600'
-                          : 'hover:bg-slate-900/50')
+                      'border-b border-rule/40 ' +
+                      (onStrip ? 'bg-bay-raised text-ink' : stale ? 'text-ink-faint' : 'text-ink-dim')
                     }
                   >
-                    <Td className="font-semibold text-slate-100">{a.callsign ?? '--'}</Td>
-                    <Td className="text-slate-500">{a.hex}</Td>
-                    <Td>{a.registration ?? '--'}</Td>
-                    <Td className="text-slate-400">{a.type ?? '--'}</Td>
-                    <Td right>{fmtAlt(a)}</Td>
-                    <Td right className={stale ? '' : vsClass(a.vsFpm)}>
-                      {fmtVs(a.vsFpm)}
+                    <Td className={onStrip ? 'text-ink' : 'text-ink'}>
+                      {onStrip && <span className="mr-1.5 text-holder-complying">▌</span>}
+                      {a.callsign ?? '—'}
                     </Td>
-                    <Td right>{a.gsKt === null ? '--' : Math.round(a.gsKt)}</Td>
-                    <Td right>
-                      {a.trackTrue === null
-                        ? '--'
-                        : Math.round(a.trackTrue).toString().padStart(3, '0')}
-                    </Td>
-                    <Td right className="text-slate-500">
-                      {a.navHeading === null
-                        ? '--'
-                        : Math.round(a.navHeading).toString().padStart(3, '0')}
-                    </Td>
-                    <Td right className={stale ? 'text-amber-600' : 'text-slate-600'}>
-                      {Number.isFinite(a.seenPosSec) ? a.seenPosSec.toFixed(1) : '--'}
+                    <Td>{a.registration ?? '—'}</Td>
+                    <Td>{a.type ?? '—'}</Td>
+                    <Td right>{a.onGround ? 'GND' : a.altFt != null ? altitudeTag(a.altFt) : '—'}</Td>
+                    <Td right>{a.vsFpm != null ? formatVerticalRate(a.vsFpm) : '—'}</Td>
+                    <Td right>{a.gsKt != null ? Math.round(a.gsKt) : '—'}</Td>
+                    <Td right>{a.trackTrue != null ? formatHeading(a.trackTrue) : '—'}</Td>
+                    <Td right>{a.navHeading != null ? formatHeading(a.navHeading) : '—'}</Td>
+                    <Td right className={stale ? 'text-signal-stale' : ''}>
+                      {Number.isFinite(a.seenPosSec) ? a.seenPosSec.toFixed(0) : '—'}
                     </Td>
                   </tr>
                 )
               })}
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="p-6 text-center text-slate-600">
-                    {traffic.length === 0
-                      ? 'waiting for first snapshot…'
-                      : 'no contacts match filter'}
+                  <td colSpan={9} className="py-8 text-center text-ink-faint">
+                    {traffic.length === 0 ? 'waiting for first snapshot' : 'nothing matches'}
                   </td>
                 </tr>
               )}
             </tbody>
           </table>
         </div>
-        <p className="mt-3 text-xs text-slate-600">
-          Track is degrees true; headings are judged in degrees magnetic, corrected by{' '}
-          {TOL.magVarDeg}° for variation at SFO. Ground track is not heading, because wind pushes
-          the aircraft sideways, so <span className="font-mono">nav hdg</span> is preferred when the
-          autopilot broadcasts it. Rows flagged amber have not reported a position for more than{' '}
-          {STALE_SEC}s and are judged UNKNOWN, never DEVIATED.
+
+        <p className="mt-3 max-w-3xl text-xs leading-relaxed text-ink-faint">
+          Altitude is shown in hundreds of feet, the way a radar data block shows it. Track is
+          degrees true; headings are judged in degrees magnetic, corrected {TOL.magVarDeg}° for
+          variation at SFO. Ground track is not heading — wind pushes the aircraft sideways — so the
+          autopilot&rsquo;s selected heading is preferred where it is broadcast. Tracks older than{' '}
+          {TOL.staleTrackSec}s are judged UNKNOWN, never DEVIATED.
         </p>
       </section>
     </main>
@@ -514,7 +463,9 @@ export default function Page() {
 }
 
 function Th({ children, right }: { children: React.ReactNode; right?: boolean }) {
-  return <th className={'px-3 py-2 font-medium ' + (right ? 'text-right' : '')}>{children}</th>
+  return (
+    <th className={`label px-2 py-2 font-semibold ${right ? 'text-right' : 'text-left'}`}>{children}</th>
+  )
 }
 
 function Td({
@@ -526,5 +477,5 @@ function Td({
   right?: boolean
   className?: string
 }) {
-  return <td className={'px-3 py-1.5 ' + (right ? 'text-right ' : '') + className}>{children}</td>
+  return <td className={`px-2 py-1.5 ${right ? 'text-right ' : ''}${className}`}>{children}</td>
 }

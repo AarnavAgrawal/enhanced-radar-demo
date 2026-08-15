@@ -234,10 +234,15 @@ currently in a state that makes the example land the way its label says.
 A failed poll never blanks the board: the server holds the last good picture and
 the header shows a stale badge with its age.
 
-**Voice, push to talk.** Hold the button, speak, release. The browser records
-with `MediaRecorder`, posts the blob to `/api/transcribe`, and the transcript
-lands in the same box you would have typed into, feeding the same parser. Voice
-is an input method, not a second code path. Round trip measured at about 770 ms.
+**Voice.** Press Talk once and speak. The recorder watches the input level and
+ends the transmission itself after about a second of silence, then transcribes
+and issues in one move — a controller has both hands busy, and the natural end
+of a transmission is silence, not a button release. The transcript lands in the
+same box you would have typed into and feeds the same parser. Voice is an input
+method, not a second code path. Round trip measured at about 770 ms.
+
+Voice never forces a guess: an ambiguous callsign still stops and asks you to
+pick, exactly as typing one does.
 
 The API key never reaches the browser.
 
@@ -273,6 +278,27 @@ so this costs nothing.
 
 **Keep using the text box.** Expo halls are loud and browser speech in a noisy
 room will embarrass you. Voice is a bonus, not the demo.
+
+## Design
+
+The interface is a **strip bay**, not a radar scope. Controllers work paper
+flight progress strips racked in a bay: tinted by function, printed with field
+dividers, annotated by hand. One clearance is one strip.
+
+The colour lives entirely in the strip papers — white pending, buff complying,
+green complied, pink deviated, grey superseded, blue unknown — so a bay can be
+read from across a room. Everything around them is graphite and hairlines, which
+makes the strips the brightest thing on screen, which is where the eye should go.
+
+When a controller amends an instruction they do not erase the old one, they
+**cross it out**. A superseded strip is struck through for the same reason, so
+it reads as amended rather than failed without anyone having to explain it.
+
+Altitudes appear in hundreds of feet on the strip and in the traffic list, the
+way a radar data block shows them, and in prose as flight levels above 18,000 ft.
+
+Type is Archivo for chrome and IBM Plex Mono for every number and callsign, both
+self-hosted at build time so replay mode needs no network for type either.
 
 ## Layout
 

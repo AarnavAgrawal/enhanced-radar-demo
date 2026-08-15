@@ -7,6 +7,7 @@
 
 import type { Constraint } from './types.ts'
 import { DIGIT_WORDS, tokenize } from './callsign.ts'
+import { formatAltitude, formatHeading } from './format.ts'
 
 /**
  * The word that opens an instruction. Everything before the first one of these
@@ -302,16 +303,17 @@ export function parseInstruction(text: string): ParsedInstruction {
 export function describeConstraint(c: Constraint): string {
   switch (c.kind) {
     case 'ALTITUDE': {
-      const ft = c.targetFt.toLocaleString('en-US')
-      if (c.direction === 'up') return `climb to ${ft} ft`
-      if (c.direction === 'down') return `descend to ${ft} ft`
-      return `maintain ${ft} ft`
+      // FL350 above the transition altitude, 10,000 ft below it.
+      const a = formatAltitude(c.targetFt)
+      if (c.direction === 'up') return `climb to ${a}`
+      if (c.direction === 'down') return `descend to ${a}`
+      return `maintain ${a}`
     }
     case 'HEADING': {
-      const hdg = String(c.targetDegMag).padStart(3, '0')
-      if (c.turn === 'left') return `turn left to heading ${hdg}° magnetic`
-      if (c.turn === 'right') return `turn right to heading ${hdg}° magnetic`
-      return `fly heading ${hdg}° magnetic`
+      const h = formatHeading(c.targetDegMag)
+      if (c.turn === 'left') return `turn left to heading ${h}° magnetic`
+      if (c.turn === 'right') return `turn right to heading ${h}° magnetic`
+      return `fly heading ${h}° magnetic`
     }
     case 'SPEED':
       return `maintain ${c.targetKt} kt`
