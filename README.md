@@ -47,6 +47,20 @@ type stripping, so there is no test framework dependency. That is why the
 modules inside `lib/` import each other with explicit `.ts` extensions: Node
 resolves ES modules strictly and will not guess the extension for you.
 
+## Morning of the demo
+
+1. `npm test` — 114 tests, takes under a second. If this fails, do not demo.
+2. Open the deployed URL **on your phone over cell data**. Confirm aircraft
+   appear and the numbers move.
+3. Click a preset, press Issue, watch a verdict land. That exercises the whole
+   chain in about fifteen seconds.
+4. Open `?replay=1` once so you know what it looks like before you need it.
+5. If the venue network is bad, add `?replay=1` and carry on. Say out loud that
+   it is a recording; the header says so too.
+
+Aircraft near SFO are thinnest around 04:00 local and busiest from about 06:00.
+An expo in the morning is fine.
+
 ## Replay mode, for when the wifi is not there
 
 The demo runs off a committed recording with no network at all:
