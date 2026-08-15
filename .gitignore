@@ -42,3 +42,30 @@ next-env.d.ts
 
 # ...but the template carries no secrets and should travel with the repo.
 !.env.example
+
+# secrets, any shape
+*.key
+*.pem
+*.p12
+*.pfx
+secrets.json
+credentials.json
+.env.local
+.env.*.local
+
+# agent + editor local config, not part of the product
+CLAUDE.md
+.claude/
+.cursor/
+.cursorrules
+.aider*
+.vscode/
+.idea/
+
+# os junk
+Thumbs.db
+desktop.ini
+
+# local scratch
+/tmp/
+*.log
