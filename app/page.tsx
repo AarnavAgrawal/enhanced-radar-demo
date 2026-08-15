@@ -1,7 +1,8 @@
 'use client'
 
-// Phases 1 to 6. Live traffic near SFO, callsign resolution, clearance parsing,
-// the conformance engine, the board, and ?replay=1 for when the wifi is not there.
+// Phases 1 to 7a. Live traffic near SFO, callsign resolution, clearance parsing,
+// the conformance engine, the board, ?replay=1 for when the wifi is not there,
+// and push to talk feeding the same parser the text box uses.
 
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import type { Aircraft, ReplayPosition, TrafficResponse } from '@/lib/types'
@@ -10,6 +11,7 @@ import { parseInstruction, describeConstraint } from '@/lib/parser'
 import { TOL } from '@/lib/conform'
 import { boardReducer, initialBoardState, makeClearance } from '@/lib/board'
 import { ClearanceBoard } from './components/ClearanceBoard'
+import { PushToTalk } from './components/PushToTalk'
 
 const POLL_MS = 2000
 
@@ -312,6 +314,16 @@ export default function Page() {
             Issue
           </button>
         </form>
+
+        {/* Voice is a bonus. The text box above is the primary path, because a
+            loud hall beats browser speech recognition every time. */}
+        <PushToTalk
+          onTranscript={(text) => {
+            setQuery(text)
+            setIssueError(null)
+            inputRef.current?.focus()
+          }}
+        />
 
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <span className="font-mono text-xs text-slate-600">presets:</span>

@@ -21,7 +21,8 @@ track, and reports whether it is doing what it was told.
 | 4 | Conformance engine | **done** |
 | 5 | The board | **done** |
 | 6 | Expo hardening (replay mode) | **done**, deploy pending |
-| 7 | Voice (Deepgram) | not started |
+| 7a | Voice, push to talk | **done** |
+| 7b | Voice, streaming | not started, and probably not worth it |
 
 ## Running it
 
@@ -109,7 +110,7 @@ is the thing most likely to fail, and cell data is the closest thing to it.
 
 | Variable | Needed for | Notes |
 |---|---|---|
-| `DEEPGRAM_API_KEY` | Phase 7 voice only | Server side only. Do **not** prefix `NEXT_PUBLIC_`, that would ship the key to the browser. |
+| `DEEPGRAM_API_KEY` | Voice only | Server side only. Do **not** prefix `NEXT_PUBLIC_`, that would ship the key to the browser. Without it the app runs fine and the talk button returns a clear message. |
 | `AIRPLANES_LIVE_ENABLED` | Optional ADS-B fallback | Leave `0`. airplanes.live now requires per-project approval and returns HTTP 403 to unregistered callers. |
 
 To set the Deepgram key in PowerShell without opening an editor:
@@ -233,12 +234,53 @@ currently in a state that makes the example land the way its label says.
 A failed poll never blanks the board: the server holds the last good picture and
 the header shows a stale badge with its age.
 
+**Voice, push to talk.** Hold the button, speak, release. The browser records
+with `MediaRecorder`, posts the blob to `/api/transcribe`, and the transcript
+lands in the same box you would have typed into, feeding the same parser. Voice
+is an input method, not a second code path. Round trip measured at about 770 ms.
+
+The API key never reaches the browser.
+
+**Keyterm prompting is the reason for using Deepgram.** The keyterm list is
+rebuilt on every request from the traffic picture at that moment: the
+instruction vocabulary, then telephony names for operators actually within
+40 nm, then live callsigns nearest the field first, in both the grouped spoken
+form a controller uses ("united twenty three twenty eight") and the digit form.
+Constraining recognition with the live ADS-B picture is what you would do in
+production, not a demo trick. Click the counter under the talk button to see the
+exact list that was sent.
+
+Deepgram caps keyterms at 500 tokens across the whole list and rejects the
+entire request with a 400 above that. Measured against the live API: 280 words
+accepted, 313 rejected, so their tokenizer splits aviation vocabulary into about
+1.8 subword tokens per word. The budget is set to 260 words, which covers around
+35 aircraft nearest the field.
+
+`smart_format` and `numerals` are **off**, per the spec. With them on, Deepgram
+returns `"United twenty three twenty eight climb and maintain one zero
+thousand."` — capitalised and punctuated. Off, it returns the raw spoken words,
+which is what the normaliser was tested against.
+
+**What the A/B actually showed.** On clean synthetic speech, keyterms moved
+confidence from 99.1% to 99.5% and did not change the transcript. That is the
+honest result and it is worth saying out loud: keyterm prompting is claimed to
+earn its keep on noisy audio and unusual callsigns, and a quiet room with a
+synthetic voice is neither. It has not been tested in a loud hall.
+
+Also worth knowing: Nova-3 already normalises `tree` to `three` and `fife` to
+`five` on its own, while leaving `niner` alone. The parser accepts all of them,
+so this costs nothing.
+
+**Keep using the text box.** Expo halls are loud and browser speech in a noisy
+room will embarrass you. Voice is a bonus, not the demo.
+
 ## Layout
 
 ```
 app/api/traffic/route.ts   proxy to adsb.lol, last-known-good cache
 app/page.tsx               the board
-app/components/            ClearanceBoard, Sparkline
+app/components/            ClearanceBoard, Sparkline, PushToTalk
+app/api/transcribe/        Deepgram passthrough, key stays server side
 lib/adsb.ts                fetch + normalise raw ADS-B into Aircraft
 lib/telephony.ts           spoken airline name -> ICAO prefix
 lib/callsign.ts            free text -> ICAO callsign -> live aircraft
@@ -246,6 +288,7 @@ lib/parser.ts              clearance grammar + aviation number normalisation
 lib/conform.ts             the verdict engine, pure functions only
 lib/board.ts               session state, pure reducer
 lib/replay.ts              playback of the committed recording
+lib/keyterms.ts            Deepgram keyterm list, built from live traffic
 scripts/record-replay.ts   records data/replay-sfo.json
 lib/types.ts               shared data model
 tests/parser.test.ts       58 tests, every row of 4.4 and every form of 4.5
