@@ -122,7 +122,9 @@ const hdg = formatHeading
  * accurately flown heading. The caveat rides along in the detail line so nobody
  * reads a track based verdict as if it were a heading measurement.
  */
-function headingOf(s: TrackSample): { deg: number; source: 'nav' | 'track' } | null {
+export type HeadingReading = { deg: number; source: 'nav' | 'track' }
+
+export function headingOf(s: TrackSample): HeadingReading | null {
   if (s.navHeading !== null) return { deg: normaliseHeading(s.navHeading), source: 'nav' }
   if (s.trackTrue !== null) return { deg: magneticFromTrue(s.trackTrue), source: 'track' }
   return null

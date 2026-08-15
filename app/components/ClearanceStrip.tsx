@@ -7,11 +7,11 @@
 // what SUPERSEDED means, and why a struck-through strip reads as amended rather
 // than failed without anyone having to explain it.
 
-import type { Clearance, Verdict } from '@/lib/types'
+import type { Clearance, TrackSample, Verdict } from '@/lib/types'
 import { describeConstraint } from '@/lib/parser'
 import { TOL } from '@/lib/conform'
-import { trendSeries } from '@/lib/board'
-import { formatAltitude, formatAltitudeShort, formatHeading, formatVerticalRate } from '@/lib/format'
+import { currentReading, trendSeries } from '@/lib/board'
+import { formatAltitudeShort, formatHeading } from '@/lib/format'
 import { Sparkline } from './Sparkline'
 
 const PAPER: Record<Verdict, string> = {
@@ -72,6 +72,23 @@ function Field({
   )
 }
 
+/** Renders whatever quantity the clearance is judged on. See currentReading. */
+function NowField({
+  constraint,
+  latest,
+}: {
+  constraint: Clearance['constraint']
+  latest: TrackSample | null
+}) {
+  const { label, primary, secondary } = currentReading(constraint, latest)
+  return (
+    <Field label={label} className="border-l">
+      <div className="font-mono text-base leading-none tnum">{primary}</div>
+      <div className="mt-1.5 font-mono text-xs text-strip-ink-dim tnum">{secondary}</div>
+    </Field>
+  )
+}
+
 export function ClearanceStrip({ clearance: c, now }: { clearance: Clearance; now: number }) {
   const latest = c.history[c.history.length - 1] ?? null
   const trend = trendSeries(c)
@@ -111,15 +128,7 @@ export function ClearanceStrip({ clearance: c, now }: { clearance: Clearance; no
             </div>
           </Field>
 
-          <Field label="now" className="border-l">
-            <div className="font-mono text-base leading-none tnum">
-              {latest?.altFt != null ? formatAltitude(latest.altFt) : '---'}
-            </div>
-            <div className="mt-1.5 font-mono text-xs text-strip-ink-dim tnum">
-              {latest?.vsFpm != null ? `${formatVerticalRate(latest.vsFpm)} fpm` : '---'}
-              {latest?.gsKt != null && ` · ${Math.round(latest.gsKt)} kt`}
-            </div>
-          </Field>
+          <NowField constraint={c.constraint} latest={latest} />
 
           <Field label="trend" className="border-l max-lg:hidden">
             {trend ? (

@@ -310,6 +310,13 @@ it, which is where flight levels begin. A bare hundreds-of-feet readout is
 correct only on the scope, where every target is labelled the same way; anywhere
 else "096" reads as FL096, and there is no such flight level.
 
+Each strip reports the quantity its clearance is judged on, not always altitude.
+A heading clearance shows the current heading and whether that came from the
+autopilot's selected heading or from ground track corrected for variation; a
+speed clearance shows ground speed and says so, because ATC assigns indicated
+airspeed and this is not that. The trend line plots the same quantity, so the
+strip, the trace and the evidence line are always talking about one thing.
+
 **The map** is a draggable window, opened from the Map button. Leaflet over a
 dark CARTO basemap with the live ADS-B targets drawn on top: a chevron per
 aircraft pointing along its ground track, brighter and labelled with callsign,

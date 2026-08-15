@@ -6,7 +6,8 @@
 // strips retire on age, the way a physical rack gets cleared as traffic moves on.
 
 import type { Aircraft, Clearance, Constraint, TrackSample } from './types.ts'
-import { evaluate, isOpen } from './conform.ts'
+import { evaluate, headingOf, isOpen, TOL } from './conform.ts'
+import { formatAltitude, formatHeading, formatVerticalRate } from './format.ts'
 
 /**
  * Samples retained per clearance. At a 2 s poll this is about eight minutes,
@@ -219,4 +220,59 @@ function unwrapDegrees(series: number[]): number[] {
     out.push(out[i - 1] + shortestDelta(series[i - 1], series[i]))
   }
   return out
+}
+
+/**
+ * What the aircraft is doing right now, in the terms of the clearance it was
+ * given.
+ *
+ * A heading clearance is judged on heading, so reporting its altitude here is
+ * a number the reader has to notice and then discard. This returns the quantity
+ * the verdict actually turns on, named, so the strip and the evidence line are
+ * always talking about the same thing.
+ */
+export function currentReading(
+  constraint: Constraint,
+  latest: TrackSample | null,
+): { label: string; primary: string; secondary: string } {
+  switch (constraint.kind) {
+    case 'ALTITUDE':
+      return {
+        label: 'altitude',
+        primary: latest?.altFt != null ? formatAltitude(latest.altFt) : '---',
+        // Says "level" rather than "0 fpm", matching the engine's own wording
+        // in the evidence line directly underneath.
+        secondary:
+          latest?.vsFpm == null
+            ? ''
+            : Math.abs(latest.vsFpm) < TOL.vsLevelFpm
+              ? 'level'
+              : `${formatVerticalRate(latest.vsFpm)} fpm`,
+      }
+
+    case 'HEADING': {
+      const reading = latest ? headingOf(latest) : null
+      return {
+        label: 'heading',
+        primary: reading ? `${formatHeading(reading.deg)}\u00b0` : '---',
+        // Which reading it is matters as much as the number. A selected heading
+        // is what the crew dialled in. A track is where the wind has actually
+        // put the aircraft, and the two differ by the crab angle.
+        secondary: reading
+          ? reading.source === 'nav'
+            ? 'autopilot selected'
+            : `from track ${latest?.trackTrue != null ? formatHeading(latest.trackTrue) : '---'}\u00b0T`
+          : '',
+      }
+    }
+
+    case 'SPEED':
+      return {
+        label: 'speed',
+        primary: latest?.gsKt != null ? `${Math.round(latest.gsKt)} kt` : '---',
+        // Named every time, because ATC assigns indicated airspeed and this is
+        // not that.
+        secondary: 'ground speed',
+      }
+  }
 }
