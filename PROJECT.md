@@ -652,7 +652,7 @@ Out of scope by design, and the honest answer to "what is next":
 
 ## 10. Commit history
 
-The build order follows the seven phase plan in `CLAUDE.md`.
+The build order follows the seven phase plan the project was specified against.
 
 ```
 4a23beb  Report the quantity each clearance is actually judged on

@@ -18,7 +18,6 @@ track, and reports whether it is doing what it was told.
 | [`BRIEFING.md`](BRIEFING.md) | Read before demoing. The demo script, the three points worth making, the aviation details a pilot will check, and the questions you will get. |
 | [`PROJECT.md`](PROJECT.md) | The full reference. Stack, architecture, every feature, every tolerance, the limitations, and the bugs that only showed up under real data. |
 | `README.md` | This file. How to run it and what it does. |
-| `CLAUDE.md` | The original build spec. |
 
 ## Status
 
@@ -335,7 +334,7 @@ close. The 40 nm ring the rest of the app works inside is drawn on it so the map
 and the traffic list are visibly the same picture.
 
 It is not an embed of FlightRadar24: they have no free API, they block framing,
-and CLAUDE.md rules out scraping them. This is the same picture from the same
+and the build spec rules out scraping them. This is the same picture from the same
 kind of data, sourced the way the rest of the app sources it.
 
 The tiles need the network, which replay mode may not have. If they fail the
