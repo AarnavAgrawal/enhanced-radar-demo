@@ -8,6 +8,7 @@ import { resolveCallsign, suggestSameAirline } from '@/lib/callsign'
 import { parseInstruction, describeConstraint } from '@/lib/parser'
 import { TOL } from '@/lib/conform'
 import { boardReducer, initialBoardState, makeClearance, MAX_STRIPS } from '@/lib/board'
+import { SFO } from '@/lib/adsb'
 import {
   formatAltitude,
   formatAltitudeShort,
@@ -17,7 +18,7 @@ import {
 } from '@/lib/format'
 import { StripBay } from './components/ClearanceStrip'
 import { PushToTalk } from './components/PushToTalk'
-import { ScopePanel } from './components/ScopePanel'
+import { MapPanel } from './components/MapPanel'
 
 const POLL_MS = 2000
 
@@ -56,7 +57,7 @@ export default function Page() {
   const [issueError, setIssueError] = useState<string | null>(null)
   const [filter, setFilter] = useState('')
   const [replay, setReplay] = useState<ReplayPosition | null>(null)
-  const [scopeOpen, setScopeOpen] = useState(false)
+  const [mapOpen, setMapOpen] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const [board, dispatch] = useReducer(boardReducer, initialBoardState)
 
@@ -222,78 +223,60 @@ export default function Page() {
 
   return (
     <main className="mx-auto max-w-[1440px] px-6 pb-20">
-      {/* Nameplate. Equipment is labelled, not branded. */}
-      <header className="flex flex-wrap items-end justify-between gap-4 border-b border-rule py-5">
-        <div>
-          <h1 className="text-[15px] font-bold tracking-[0.16em] uppercase text-ink">
-            Clearance Conformance Monitor
-          </h1>
-          <p className="mt-1.5 font-mono text-xs text-ink-faint">
-            KSFO · 40 nm · headings magnetic, var {TOL.magVarDeg}°E
-          </p>
-        </div>
-
-        <div className="flex items-center gap-5 font-mono text-xs tnum">
+      {/* Command line. First thing on the page: the header that used to sit
+          above it was three lines of chrome between the operator and the box
+          they came here to type in. */}
+      <section className="pt-6 pb-6">
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-3 font-mono text-xs tnum">
+          <span className="flex items-center gap-4">
+            <span className="flex items-center gap-2 text-ink-dim">
+              <span
+                className={
+                  'inline-block h-1.5 w-1.5 rounded-full ' +
+                  (status === 'live'
+                    ? 'bg-signal-live'
+                    : status === 'stale'
+                      ? 'bg-signal-stale'
+                      : 'bg-signal-fault')
+                }
+                aria-hidden
+              />
+              {status === 'fault'
+                ? 'holding last'
+                : status === 'stale'
+                  ? `stale ${ageSec}s`
+                  : `live ${ageSec ?? '--'}s`}
+            </span>
+            <span className="text-ink-faint">
+              KSFO {SFO.radiusNm} nm · {traffic.length} contacts
+            </span>
+            {isReplay && replay && (
+              <span className="text-holder-unknown">
+                replay {replay.frame + 1}/{replay.frames}, recorded{' '}
+                {new Date(replay.recordedAt).toLocaleDateString()}
+              </span>
+            )}
+            <a
+              href="#notes"
+              className="text-signal-stale underline decoration-dotted underline-offset-2 hover:text-ink"
+            >
+              synthetic, nothing is transmitted
+            </a>
+          </span>
           <button
             type="button"
-            onClick={() => setScopeOpen((v) => !v)}
+            onClick={() => setMapOpen((v) => !v)}
             className={
               'border px-2 py-1 uppercase tracking-wider ' +
-              (scopeOpen
+              (mapOpen
                 ? 'border-ink-dim text-ink'
                 : 'border-rule text-ink-faint hover:border-ink-faint hover:text-ink-dim')
             }
-            aria-pressed={scopeOpen}
+            aria-pressed={mapOpen}
           >
-            Scope
+            Map
           </button>
-          {isReplay && (
-            <span className="border border-holder-unknown px-2 py-1 text-holder-unknown uppercase tracking-wider">
-              Replay {replay ? `${replay.frame + 1}/${replay.frames}` : ''}
-            </span>
-          )}
-          <span className="flex items-center gap-2 text-ink-dim">
-            <span
-              className={
-                'inline-block h-1.5 w-1.5 rounded-full ' +
-                (status === 'live'
-                  ? 'bg-signal-live'
-                  : status === 'stale'
-                    ? 'bg-signal-stale'
-                    : 'bg-signal-fault')
-              }
-              aria-hidden
-            />
-            {status === 'fault'
-              ? 'holding last'
-              : status === 'stale'
-                ? `stale ${ageSec}s`
-                : `live ${ageSec ?? '--'}s`}
-          </span>
-          <span className="text-ink-faint">{traffic.length} contacts</span>
         </div>
-      </header>
-
-      {/* A short marker stays in the header; the full disclosure is in Notes at
-          the bottom. CLAUDE.md asked for the whole paragraph up here, so this is a
-          deliberate departure: the claim still leads, but the explanation no longer
-          sits between the operator and the command line. */}
-      <p className="border-b border-rule py-2.5 text-xs text-ink-dim">
-        <span className="label mr-2 text-signal-stale">Synthetic</span>
-        Nothing here is transmitted. No aircraft receives these clearances.{' '}
-        <a href="#notes" className="underline decoration-dotted underline-offset-2 hover:text-ink">
-          What that means
-        </a>
-        {isReplay && replay && (
-          <span className="ml-2 text-holder-unknown">
-            Replay: recorded tracks from {new Date(replay.recordedAt).toLocaleString()}, not live
-            traffic.
-          </span>
-        )}
-</p>
-
-      {/* Command line. */}
-      <section className="py-6">
         <form
           onSubmit={(e) => {
             e.preventDefault()
@@ -538,11 +521,11 @@ export default function Page() {
         </div>
       </section>
 
-      {scopeOpen && (
-        <ScopePanel
+      {mapOpen && (
+        <MapPanel
           traffic={traffic}
           watched={watched}
-          onClose={() => setScopeOpen(false)}
+          onClose={() => setMapOpen(false)}
           onPick={(a) => {
             if (!a.callsign) return
             setQuery(`${a.callsign} `)

@@ -207,11 +207,20 @@ autopilot broadcasts it; otherwise ground track is corrected by 13 degrees for
 variation and the detail line says so, because track is not heading in a
 crosswind.
 
-**The board.** One strip per clearance. Amending an instruction replaces its
-strip and moves it to the top rather than stacking a second one beside it, and
-the previous instruction is kept on the new strip, struck through. The bay holds
-eight strips: closed ones retire after eight minutes, and when the rack is full
-closed strips are pulled before open ones, oldest first. Each row carries the spoken callsign, the resolved callsign, the
+**The board.** One strip per *aircraft*, not per clearance. Anything said to an
+aircraft replaces whatever its strip said before, moves to the top of the bay,
+carries the track forward so the trend line does not restart, and keeps the
+previous instruction on the new strip struck through.
+
+Matching is on the aircraft alone, not on aircraft and instruction type. The
+engine's `supersede` is narrower on purpose, because a speed assignment
+genuinely does not cancel an altitude assignment. But the bay is a rack someone
+reads at a glance, and two strips for one callsign is two things to reconcile
+mid sentence. The trade is deliberate: a simultaneous altitude and speed
+assignment shows only the later one.
+
+The bay holds eight strips. Closed ones retire after eight minutes, and when the
+rack is full closed strips are pulled before open ones, oldest first. Each row carries the spoken callsign, the resolved callsign, the
 tail, the current altitude and vertical rate, the clearance in plain English, a
 trend line with the assigned value drawn across it as a dashed reference, the
 verdict badge, and the evidence line underneath. PENDING rows show the response
@@ -301,16 +310,21 @@ it, which is where flight levels begin. A bare hundreds-of-feet readout is
 correct only on the scope, where every target is labelled the same way; anywhere
 else "096" reads as FL096, and there is no such flight level.
 
-**The scope** is a draggable window, opened from the Scope button in the header.
-Range rings at 10, 20, 30 and 40 nm, north up, with a leader line on each target
-showing where it will be in one minute at its current ground speed and track.
-It is drawn from lat/lon rather than fetched as map tiles: a tile layer would
-need the network, which is the thing replay mode exists to survive, and a
-controller's plan view has no satellite imagery on it anyway. Click a target to
-put its callsign in the command line. Escape closes it.
+**The map** is a draggable window, opened from the Map button. Leaflet over a
+dark CARTO basemap with the live ADS-B targets drawn on top: a chevron per
+aircraft pointing along its ground track, brighter and labelled with callsign,
+altitude and ground speed for anything holding a strip. Hover for the full
+readout, click a target to put its callsign in the command line, Escape to
+close. The 40 nm ring the rest of the app works inside is drawn on it so the map
+and the traffic list are visibly the same picture.
 
-Type is Archivo for chrome and IBM Plex Mono for every number and callsign, both
-self-hosted at build time so replay mode needs no network for type either.
+It is not an embed of FlightRadar24: they have no free API, they block framing,
+and CLAUDE.md rules out scraping them. This is the same picture from the same
+kind of data, sourced the way the rest of the app sources it.
+
+The tiles need the network, which replay mode may not have. If they fail the
+panel keeps its dark background, still plots every target, and says "no tiles,
+targets only". The basemap is context, not the content.
 
 ## Layout
 

@@ -6,7 +6,7 @@
 // strips retire on age, the way a physical rack gets cleared as traffic moves on.
 
 import type { Aircraft, Clearance, Constraint, TrackSample } from './types.ts'
-import { evaluate, isOpen, supersede } from './conform.ts'
+import { evaluate, isOpen } from './conform.ts'
 
 /**
  * Samples retained per clearance. At a 2 s poll this is about eight minutes,
@@ -69,31 +69,38 @@ function appendSample(history: TrackSample[], sample: TrackSample): TrackSample[
 export function boardReducer(state: BoardState, action: BoardAction): BoardState {
   switch (action.type) {
     case 'ISSUE': {
-      // Close anything this clearance amends, then pull the closed strip from
-      // the bay rather than leaving a dead row behind. A controller who amends
-      // an instruction writes a new strip and removes the old one; two strips
-      // for one aircraft and one instruction is just clutter to read past.
-      const marked = supersede(state.clearances, action.clearance)
-      const replaced = marked.filter(
-        (c) => c.status === 'SUPERSEDED' && c.hex === action.clearance.hex,
-      )
-      const survivors = marked.filter((c) => !replaced.includes(c))
+      // One strip per aircraft. Any earlier clearance to the same aircraft is
+      // pulled from the bay and the new one takes its place at the top.
+      //
+      // Matching on hex alone, not on hex and constraint kind. The engine's
+      // supersede() is narrower on purpose: a speed assignment genuinely does
+      // not cancel an altitude assignment, and it stays that way. But the bay
+      // is a rack a person reads at a glance, and two strips for one callsign
+      // is two things to reconcile mid sentence. Whatever was last said to this
+      // aircraft is what the strip shows.
+      //
+      // Status is deliberately not consulted. An earlier clearance that already
+      // went DEVIATED is still an earlier clearance, and leaving it behind was
+      // exactly how "alaska 236 descend 5000" then "alaska 236 descend 3000"
+      // ended up as two strips.
+      const previous = state.clearances.filter((c) => c.hex === action.clearance.hex)
+      const others = state.clearances.filter((c) => c.hex !== action.clearance.hex)
 
-      // Carry the replaced clearance's track forward so the trend line does not
-      // restart from nothing, and keep what it used to say.
-      const previous = replaced[replaced.length - 1]
-      const issued: Clearance = previous
+      // Carry the most recent previous strip's track forward so the trend line
+      // does not restart from nothing, and keep what it used to say.
+      const last = previous.sort((a, b) => a.issuedAt - b.issuedAt).pop()
+      const issued: Clearance = last
         ? {
             ...action.clearance,
-            amendedFrom: previous.constraint,
+            amendedFrom: last.constraint,
             history:
-              previous.history.length > action.clearance.history.length
-                ? previous.history
+              last.history.length > action.clearance.history.length
+                ? last.history
                 : action.clearance.history,
           }
         : action.clearance
 
-      return { clearances: prune([issued, ...survivors], action.clearance.issuedAt) }
+      return { clearances: prune([issued, ...others], action.clearance.issuedAt) }
     }
 
     case 'SNAPSHOT': {
