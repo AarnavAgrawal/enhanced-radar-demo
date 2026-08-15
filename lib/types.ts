@@ -24,7 +24,8 @@ export type Aircraft = {
   lat: number
   lon: number
   seenPosSec: number // seconds since last position update
-  ts: number // client receive time, ms
+  /** Client receive time, ms. Stamped by the browser, not the server. */
+  ts: number
 }
 
 /**

@@ -92,7 +92,14 @@ export default function Page() {
       const res = await fetch(url, { cache: 'no-store' })
       const body: TrafficResponse = await res.json()
       if (body.ok) {
-        setTraffic(body.aircraft)
+        // Stamp arrival with THIS browser's clock. The engine decides staleness
+        // from `now - ts`, and `now` is this browser's clock too, so both sides
+        // of that subtraction have to come from the same place. Trusting the
+        // server's stamp instead would mean a phone whose clock runs a few
+        // minutes fast marks every aircraft UNKNOWN, and the demo would fail
+        // only on the device it is being demonstrated from.
+        const receivedAt = Date.now()
+        setTraffic(body.aircraft.map((a) => ({ ...a, ts: receivedAt })))
         setFetchedAt(body.fetchedAt)
         setSource(body.source)
         setReplay(body.replay ?? null)

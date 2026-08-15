@@ -60,6 +60,12 @@ disclosure line names the date the tracks were recorded, so nobody watching can
 mistake it for live traffic. Playback loops, because a demo that dies after ten
 minutes dies in the middle of a conversation.
 
+The committed recording is 300 frames over 10.0 minutes, 191 distinct aircraft,
+8.6 MB. It contains a good demo subject: **UAL2279 (N877UA, A319) flies a
+complete arrival**, descending from 15,125 ft to 2,200 ft across the whole
+recording, so `united 2279 descend and maintain 3000` complies for minutes and
+`united 2279 climb and maintain 20000` deviates immediately.
+
 To re-record (do this the night before, then commit the file):
 
 ```powershell

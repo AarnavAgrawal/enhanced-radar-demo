@@ -83,6 +83,9 @@ export function normaliseAircraft(raw: RawAircraft, receivedAt: number): Aircraf
     // stale rather than fresh. Downstream marks stale tracks UNKNOWN, never
     // as a deviation.
     seenPosSec: num(raw.seen_pos) ?? Number.POSITIVE_INFINITY,
+    // Server receive time. The browser overwrites this with its own clock on
+    // arrival, because staleness is judged against the browser's clock and the
+    // two must not be mixed. See the poll handler in app/page.tsx.
     ts: receivedAt,
   }
 }
