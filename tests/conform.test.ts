@@ -1,7 +1,6 @@
 // Tests for the conformance engine, with synthetic track buffers.
-// Written before lib/conform.ts, per CLAUDE.md phase 4. Covers the cases the
-// spec names: correct climb, wrong direction, level off, bust, stale data,
-// superseded, plus the heading and speed paths.
+// Written before lib/conform.ts. Covers correct climb, wrong direction, level
+// off, bust, stale data and superseded, plus the heading and speed paths.
 
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
@@ -110,7 +109,7 @@ describe('helpers', () => {
   })
 })
 
-describe('altitude: the cases from phase 4', () => {
+describe('altitude', () => {
   test('correct climb, still going -> COMPLYING', () => {
     const buf = samples([
       { at: 0, alt: 6000, vs: 0 },
@@ -486,8 +485,8 @@ describe('a superseded clearance is never re-evaluated into something else', () 
   })
 })
 
-describe('tolerances are exported and match the spec', () => {
-  test('section 4.6 values', () => {
+describe('tolerances are exported', () => {
+  test('the declared values', () => {
     assert.equal(TOL.responseWindowSec, 20)
     assert.equal(TOL.evalWindowSec, 120)
     assert.equal(TOL.altLevelBandFt, 200)

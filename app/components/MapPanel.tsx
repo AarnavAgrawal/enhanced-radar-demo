@@ -4,7 +4,7 @@
 //
 // Leaflet over a dark CARTO basemap, with our own ADS-B targets drawn on top.
 // Not an embed of FlightRadar24: they have no free API, they block framing, and
-// CLAUDE.md rules out scraping them. This shows the same picture from the same
+// scraping them is against their terms. This shows the same picture from the same
 // kind of data, sourced the way the rest of the app sources it.
 //
 // The tiles need the network. In replay mode there may not be one, so the map

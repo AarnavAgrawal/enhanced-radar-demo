@@ -1,5 +1,5 @@
-// Tests for the clearance parser. Written before lib/parser.ts, per CLAUDE.md
-// phase 3. Covers every row of section 4.4 and every form of section 4.5.
+// Tests for the clearance parser. Written before lib/parser.ts. Covers every
+// spoken-number form and every form of the clearance grammar.
 //
 // Run: npm test
 
@@ -26,8 +26,7 @@ function num(text: string): number | null {
   return parseAviationNumber(tokenize(text))
 }
 
-describe('4.4 aviation number normalisation', () => {
-  // The exact table from CLAUDE.md section 4.4.
+describe('aviation number normalisation', () => {
   test('one zero thousand -> 10000', () => assert.equal(num('one zero thousand'), 10000))
   test('ten thousand -> 10000', () => assert.equal(num('ten thousand'), 10000))
   test('five thousand five hundred -> 5500', () =>
@@ -65,7 +64,7 @@ describe('4.4 aviation number normalisation', () => {
   test('empty -> null', () => assert.equal(num(''), null))
 })
 
-describe('4.5 clearance grammar, the nine forms', () => {
+describe('clearance grammar, the nine forms', () => {
   test('1. climb and maintain <alt>', () => {
     assert.deepEqual(constraintOf('united 328 climb and maintain one zero thousand'), {
       kind: 'ALTITUDE',
@@ -347,7 +346,7 @@ describe('how altitudes are written back out', () => {
   })
 })
 
-describe('phase 3 done-when, from CLAUDE.md section 6', () => {
+describe('end to end: spoken text in, constraint out', () => {
   test('"united 328 climb and maintain one zero thousand"', () => {
     const r = parseInstruction('united 328 climb and maintain one zero thousand')
     assert.equal(r.ok, true)

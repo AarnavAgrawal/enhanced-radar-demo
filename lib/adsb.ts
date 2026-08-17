@@ -1,4 +1,4 @@
-// Fetch and normalise live ADS-B snapshots. See CLAUDE.md section 4.1.
+// Fetch and normalise live ADS-B snapshots from the adsb.lol v2 API.
 //
 // This module is the only place that knows the shape of the upstream JSON.
 // Everything downstream sees `Aircraft`, which is flat, typed, and unit-explicit.

@@ -1,5 +1,5 @@
 // Build the Deepgram keyterm list from the live traffic picture.
-// See CLAUDE.md phase 7. Pure functions; the traffic list is passed in.
+// Pure functions; the traffic list is passed in.
 //
 // This is the part of the voice path worth talking about. A general speech
 // model has no reason to prefer "Speedbird" over "speed bird", or to hear

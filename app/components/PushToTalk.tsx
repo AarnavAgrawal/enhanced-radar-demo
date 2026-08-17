@@ -1,6 +1,6 @@
 'use client'
 
-// Talk, then stop talking. See CLAUDE.md phase 7a.
+// Talk, then stop talking.
 //
 // Press once and speak. The recorder listens for you to finish rather than
 // making you hold a button, because a controller issuing a clearance has both

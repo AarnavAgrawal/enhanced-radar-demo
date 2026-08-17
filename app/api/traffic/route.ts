@@ -80,7 +80,7 @@ export async function GET(request: Request) {
   } catch (err) {
     const error = err instanceof Error ? err.message : String(err)
     // Hold the last known picture. The client shows how old it is; it does not
-    // get a blank screen because one poll timed out on expo wifi.
+    // get a blank screen because one poll timed out on a flaky network.
     if (lastGood) {
       return NextResponse.json({ ok: true, ...lastGood } satisfies TrafficResponse)
     }

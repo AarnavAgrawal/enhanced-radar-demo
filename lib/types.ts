@@ -1,6 +1,4 @@
-// Shared data model. See CLAUDE.md section 5.
-//
-// Clearance and Verdict arrive in phase 4 alongside the engine that consumes them.
+// Shared data model.
 
 /**
  * A single ADS-B position report, normalised out of the adsb.lol v2 payload.

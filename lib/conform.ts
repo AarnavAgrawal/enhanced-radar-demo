@@ -1,4 +1,4 @@
-// The conformance engine. See CLAUDE.md phase 4.
+// The conformance engine.
 //
 // Pure functions only: no fetch, no clock reads, no React. `now` is passed in.
 // That is what makes every verdict in here reproducible from a track buffer and
@@ -11,10 +11,10 @@ import type { Assessment, Clearance, TrackSample, Verdict } from './types.ts'
 import { formatAltitude, formatFeet, formatHeading } from './format.ts'
 
 /**
- * Every threshold in one place, so they are visible and tunable. See CLAUDE.md
- * section 4.6. These are judgement calls, not regulation: they are set to be
- * loose enough that normal flying does not trip them, because a monitor that
- * cries wolf gets switched off.
+ * Every threshold in one place, so they are visible and tunable. These are
+ * judgement calls, not regulation: they are set loose enough that normal
+ * flying does not trip them, because a monitor that cries wolf gets switched
+ * off.
  */
 export const TOL = {
   responseWindowSec: 20, // time allowed to start reacting
@@ -28,7 +28,7 @@ export const TOL = {
   magVarDeg: 13, // east variation at SFO in 2026
   staleTrackSec: 15,
 
-  // Beyond section 4.6, and tunable for the same reason the rest are.
+  // Beyond the table above, and tunable for the same reason the rest are.
   hdgRespondingDeg: 5, // turn that counts as having started the turn
   spdRespondingKt: 5, // speed change that counts as a real response
   driftMultiplier: 2, // how far off an established value counts as having left it

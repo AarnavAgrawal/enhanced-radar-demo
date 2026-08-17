@@ -1,7 +1,7 @@
-// Playback of a recorded snapshot sequence. See CLAUDE.md phase 6.
+// Playback of a recorded snapshot sequence.
 //
-// Expo wifi is not to be trusted and neither is an upstream being up at the
-// moment somebody is watching. With ?replay=1 the app runs off a committed
+// A venue network is not to be trusted, and neither is an upstream being up at
+// the moment somebody is watching. With ?replay=1 the app runs off a committed
 // recording and needs no network at all.
 //
 // The frame selection is pure, so it is driven by a clock passed in rather than

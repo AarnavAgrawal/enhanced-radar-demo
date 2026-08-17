@@ -1,4 +1,4 @@
-// Push to talk, batch. See CLAUDE.md phase 7a.
+// Push to talk, batch.
 //
 // The browser records while a button is held and posts the blob here. This
 // route forwards it to Deepgram's prerecorded endpoint and hands the transcript

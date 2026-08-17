@@ -1,5 +1,5 @@
 // Clearance grammar and aviation number normalisation.
-// See CLAUDE.md sections 4.4 and 4.5. Pure functions, no I/O, no clock.
+// Pure functions, no I/O, no clock.
 //
 // This is a grammar, not a prompt. ATC phraseology is close to a regular
 // language and a grammar can be stepped through at 2am when a verdict looks
@@ -34,13 +34,13 @@ const WORD_NUMBERS: Record<string, number> = {
 }
 
 /**
- * Normalise a spoken number to its value. See CLAUDE.md section 4.4.
+ * Normalise a spoken number to its value.
  *
  * Controllers do not speak normal numbers. Altitudes are read digit by digit
  * and then scaled -- "one zero thousand" is ten thousand feet, not one, zero,
- * thousand. The approach is the one the spec prescribes: accumulate digits into
- * a string, then let "thousand" and "hundred" act as multipliers on whatever
- * has accumulated so far.
+ * thousand. The approach: accumulate digits into a string, then let
+ * "thousand" and "hundred" act as multipliers on whatever has accumulated so
+ * far.
  *
  * Digits accumulate as a STRING rather than as a running total, because
  * "two five zero" is 250 and not 2 + 5 + 0, and because a leading zero in
@@ -208,7 +208,7 @@ function speedConstraint(kt: number | null, form: ClearanceForm, instruction: st
  * Parse a clearance into a constraint.
  *
  * Accepts the full spoken text including the callsign, and parses from the
- * first instruction keyword onward. The nine forms of section 4.5 are the
+ * first instruction keyword onward. The nine phraseology forms are the
  * grammar; a few optional words ("and", "to") are tolerated because people drop
  * them, but nothing outside the nine forms is guessed at.
  */

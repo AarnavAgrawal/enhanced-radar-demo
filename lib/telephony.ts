@@ -1,9 +1,9 @@
-// Spoken airline name -> ICAO three letter prefix. See CLAUDE.md section 4.3.
+// Spoken airline name -> ICAO three letter prefix.
 //
 // Keys are what a controller actually says on frequency (the telephony
-// callsign), plus the marketing name where it differs, because someone at the
-// expo will type "Republic 4412" rather than "Brickyard 4412" and both must
-// land on RPA4412.
+// callsign), plus the marketing name where it differs, because someone will
+// type "Republic 4412" rather than "Brickyard 4412" and both must land on
+// RPA4412.
 //
 // Keys are lowercase and may be multiple words. Lookup matches the LONGEST key
 // first, so "sun country" beats a hypothetical "sun" and "korean air" beats

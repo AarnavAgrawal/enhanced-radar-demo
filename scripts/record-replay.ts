@@ -1,8 +1,8 @@
 // Record a sequence of live snapshots to data/replay-sfo.json.
 //
-// Expo wifi is not to be trusted, and neither is adsb.lol being up at the exact
-// moment someone is watching. Run this once the night before, commit the file,
-// and the demo works with the network unplugged.
+// A venue network is not to be trusted, and neither is adsb.lol being up at the
+// exact moment someone is watching. Run this once ahead of time, commit the
+// file, and the app works with the network unplugged.
 //
 //   npm run record:replay              # 10 minutes at 2 s
 //   npm run record:replay -- 300 2000  # 300 frames, 2 s apart

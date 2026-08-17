@@ -1,6 +1,5 @@
 // Free text -> spoken callsign -> ICAO callsign -> a live aircraft.
-// See CLAUDE.md sections 4.3 and 6 phase 2. Pure functions; the live traffic
-// list is passed in.
+// Pure functions; the live traffic list is passed in.
 
 import type { Aircraft, Resolution } from './types.ts'
 import { TELEPHONY, TELEPHONY_KEYS_BY_LENGTH } from './telephony.ts'
@@ -77,7 +76,7 @@ export function extractSpokenCallsign(text: string): string {
  *
  * This deliberately does NOT apply thousand/hundred multipliers. A flight
  * number is a digit string, not a quantity. Altitudes and headings, where the
- * multipliers do matter, belong to parser.ts in phase 3.
+ * multipliers do matter, belong to parser.ts.
  */
 export function spokenNumberToDigits(tokens: string[]): string | null {
   let out = ''
